@@ -16,8 +16,17 @@ Add-Type -AssemblyName System.Windows.Forms
 # Define the programs (installers and batch files) with their respective silent installation arguments or empty args for batch files
 $programs = @(
     @{ Name = "Autologon Conversion"; Path = Join-Path $PSScriptRoot "apps\AutologonConversionv4.exe"; Args = "/S" },
-    @{ Name = "Remove Autologon";     Path = Join-Path $PSScriptRoot "apps\NoAutoLogon.bat";       Args = "/s" },
-    @{ Name = "Visual Studio Code";   Path = Join-Path $PSScriptRoot "apps\VSCode_installer.exe";  Args = "/silent" },
+    @{ Name = "Remove Autologon";     Path = Join-Path $PSScriptRoot "apps\NoAutoLogon.bat";       Args = " " },
+    @{ Name = "VidyoConnect";   Path = Join-Path $PSScriptRoot "apps\VidyoConnectInstaller-win64-TAG_VCOND_21_6_4_17476.exe";  Args = "/S" },
+	@{ Name = "Imprivata Type1";   Path = Join-Path $PSScriptRoot "\apps\Imprivata\type1.bat";  Args = "/S" },
+	@{ Name = "Imprivata Type2";   Path = Join-Path $PSScriptRoot "\apps\Imprivata\type2.bat";  Args = " " },
+	#@{ Name = "VidyoConnect";   Path = Join-Path $PSScriptRoot "\apps\Imprivata\type2.bat";  Args = " " },
+	#@{ Name = "VidyoConnect";   Path = Join-Path $PSScriptRoot "\apps\Imprivata\type2.bat";  Args = " " },
+	#@{ Name = "VidyoConnect";   Path = Join-Path $PSScriptRoot "\apps\Imprivata\type2.bat";  Args = " " },
+	#@{ Name = "VidyoConnect";   Path = Join-Path $PSScriptRoot "\apps\Imprivata\type2.bat";  Args = " " },
+	#@{ Name = "VidyoConnect";   Path = Join-Path $PSScriptRoot "\apps\Imprivata\type2.bat";  Args = " " },
+	#@{ Name = "VidyoConnect";   Path = Join-Path $PSScriptRoot "\apps\Imprivata\type2.bat";  Args = " " },
+	#@{ Name = "VidyoConnect";   Path = Join-Path $PSScriptRoot "\apps\Imprivata\type2.bat";  Args = " " },
     @{ Name = "Custom Batch File";    Path = Join-Path $PSScriptRoot "apps\custom_script.bat";     Args = "" }
 )
 
@@ -135,7 +144,7 @@ function Show-Form {
 
     foreach ($program in $programs) {
         $checkbox = New-Object System.Windows.Forms.CheckBox
-        $checkbox.Text = "Run $($program.Name)"
+        $checkbox.Text = "$($program.Name)"
         $checkbox.Location = New-Object System.Drawing.Point(20, $yPosition)
         $checkbox.Size = New-Object System.Drawing.Size(360, 25)
         $checkbox.Font = New-Object System.Drawing.Font("Segoe UI", 10)
