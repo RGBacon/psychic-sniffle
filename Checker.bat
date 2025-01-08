@@ -22,8 +22,8 @@ for /f "delims=" %%i in (%input_file%) do (
     ) || (
         echo Failed to retrieve information for !HOST! >> "%output_file%"
     )
-
-    echo. >> "%output_file%"   :: Append an empty line after each host's info
+	:: Append an empty line after each host's info
+    echo. >> "%output_file%"   
 )
 
 endlocal
