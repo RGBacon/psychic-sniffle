@@ -2,32 +2,28 @@
 setlocal enabledelayedexpansion
 
 :: Path to the text file containing the list of hostnames
-set input_file=hosts.txt
+set "input_file=hosts.txt"
 
 :: Path to the output file
-set output_file=output.txt
+set "output_file=output.txt"
 
 :: Clear the output file before appending results
-echo. > %output_file%
+> "%output_file%" echo.
 
 :: Read each line in the input file
 for /f "delims=" %%i in (%input_file%) do (
-    set HOST=%%i
+    set "HOST=%%i"
     echo Running systeminfo for !HOST!
 
-    :: Run systeminfo hostname and filter for OS Name and Total Physical Memory
-    systeminfo /S !HOST! | findstr /C:"OS Name" /C:"Total Physical Memory" > temp.txt
-
-    :: Check if temp.txt contains results
-    for /f "delims=" %%a in (temp.txt) do (
-        echo Host: !HOST! >> %output_file%
-        echo %%a >> %output_file%
+    :: Run systeminfo and filter for OS Name and Total Physical Memory
+    systeminfo /S "!HOST!" 2>nul | findstr /C:"OS Name" /C:"Total Physical Memory" >nul && (
+        echo Host: !HOST! >> "%output_file%"
+        systeminfo /S "!HOST!" 2>nul | findstr /C:"OS Name" /C:"Total Physical Memory" >> "%output_file%"
+    ) || (
+        echo Failed to retrieve information for !HOST! >> "%output_file%"
     )
 
-    :: Clean up temp file
-    del temp.txt
-
-    echo. >> %output_file%
+    echo. >> "%output_file%"   :: Append an empty line after each host's info
 )
 
 endlocal
