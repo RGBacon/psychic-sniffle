@@ -15,14 +15,21 @@ for /f "delims=" %%i in (%input_file%) do (
     set "HOST=%%i"
     echo Running systeminfo for !HOST!
 
-    :: Run systeminfo and filter for OS Name and Total Physical Memory
-    systeminfo /S "!HOST!" 2>nul | findstr /C:"OS Name" /C:"Total Physical Memory" >nul && (
+    :: Run systeminfo and capture its output
+    set "system_info="
+    for /f "delims=" %%j in ('systeminfo /S "!HOST!" 2^>nul') do (
+        if "%%j" neq "" set "system_info=!system_info!%%j`n"
+    )
+
+    :: Check if the output contains OS Name and Total Physical Memory
+    echo !system_info! | findstr /C:"OS Name" >nul && (
         echo Host: !HOST! >> "%output_file%"
-        systeminfo /S "!HOST!" 2>nul | findstr /C:"OS Name" /C:"Total Physical Memory" >> "%output_file%"
+        echo !system_info! | findstr /C:"OS Name" /C:"Total Physical Memory" >> "%output_file%"
     ) || (
         echo Failed to retrieve information for !HOST! >> "%output_file%"
     )
-	:: Append an empty line after each host's info
+    
+    :: Append an empty line after each host's info
     echo. >> "%output_file%"   
 )
 
