@@ -1,41 +1,19 @@
 @echo off
 setlocal enabledelayedexpansion
 
-:: Check for input.txt and exit if not found
+:: Check if input.txt exists
 if not exist input.txt (
     echo Error: input.txt file not found. Please create a file with hostnames.
     pause
     exit /b 1
 )
 
-:: Create or clear results.txt (more efficient way)
-> results.txt (echo.)
+:: Create or clear results file
+echo Results of Sunquest Lab application check: > results.txt
 
-:: Build PowerShell script outside the loop for efficiency
-set "psCommand=^
-\$ErrorActionPreference = 'Stop'; ^
-try { ^
-    \$computers = Get-Content -Path 'input.txt'; ^
-    foreach (\$computer in \$computers) { ^
-        \$apps = Get-CimInstance -ClassName Win32_Product -ComputerName \$computer -Filter ""Name LIKE 'Sunquest Lab%%'""; ^
-        if (\$apps) { ^
-            foreach (\$app in \$apps) { ^
-                Write-Output ""Found Sunquest Lab application on \$computer: \$($app.Name)"" ^
-            } ^
-        } else { ^
-            Write-Output ""No Sunquest Lab application found on \$computer"" ^
-        } ^
-    } ^
-} catch { ^
-    Write-Output ""Error connecting to \$computer"" ^
-}"
-
-:: Run the PowerShell script and capture the output directly
-powershell -NoProfile -ExecutionPolicy Bypass -Command "%psCommand%" >> results.txt
-
-:: Output to console from results.txt
-type results.txt
+:: Execute PowerShell command - all on one line with proper escaping
+powershell -Command "$hostnames = Get-Content 'input.txt'; $results = @(); foreach ($hostname in $hostnames) { try { Write-Output \"Checking installed applications on host: $hostname\"; $apps = Get-WmiObject -Namespace 'root\cimv2' -Class Win32_Product -ComputerName $hostname -ErrorAction Stop | Where-Object { $_.Name -like 'Sunquest Lab*' } | Select-Object -ExpandProperty Name; if ($apps) { foreach ($app in $apps) { $results += [PSCustomObject]@{ Hostname = $hostname; Application = $app } } } else { $results += [PSCustomObject]@{ Hostname = $hostname; Application = 'NoMatch' } } } catch { $results += [PSCustomObject]@{ Hostname = $hostname; Application = 'Error' } } }; $results | ForEach-Object { if ($_.Application -eq 'Error') { \"Error connecting to $($_.Hostname)\" } elseif ($_.Application -eq 'NoMatch') { \"No Sunquest Lab application found on $($_.Hostname)\" } else { \"Found Sunquest Lab application on $($_.Hostname): $($_.Application)\" } }" >> results.txt
 
 echo Process completed. Results saved in results.txt
-endlocal
 pause
+endlocal
