@@ -23,32 +23,34 @@ $hosts = Get-Content $InputFile | Where-Object { $_ -ne "" }
 
 $scriptBlock = {
     param($computerName, $timeout)
-    
+
     try {
-        $result = Get-WmiObject -ComputerName $computerName -Class Win32_OperatingSystem -ErrorAction Stop | 
-        Select-Object @{
-            Name='Hostname'; Expression={$computerName}
-        }, 
-        @{
-            Name='OSName'; Expression={$_.Caption}
-        },
-        @{
-            Name='TotalMemory'; Expression={[math]::Round($_.TotalVisibleMemorySize / 1MB, 2)}
+        $result = Get-WmiObject -Namespace root\cimv2 -ComputerName $computerName -Class Win32_OperatingSystem -Property Hostname, Caption, TotalVisibleMemorySize -ErrorAction Stop
+        return [PSCustomObject]@{
+            Hostname = $computerName
+            OSName = $result.Caption
+            TotalMemory = [math]::Round($result.TotalVisibleMemorySize / 1MB, 2)
         }
-        return $result
-    }
-    catch {
+    } catch {
         return $null
     }
 }
 
 $jobs = @()
+$completed = 0
 
 foreach ($computerName in $hosts) {
     $jobs += Start-Job -ScriptBlock $scriptBlock -ArgumentList $computerName, $Timeout
 }
 
-$results = $jobs | Wait-Job -Timeout $Timeout | Receive-Job
+Write-Progress -Activity "Processing Hosts" -Status "Starting..." -PercentComplete 0
+
+$results = foreach ($job in $jobs) {
+    Wait-Job $job -Timeout $Timeout
+    $completed++
+    Write-Progress -Activity "Processing Hosts" -Status "Processing..." -PercentComplete ([int]($completed / $jobs.Count * 100))
+    Receive-Job $job
+}
 
 Remove-Job -Job $jobs -Force
 
@@ -58,8 +60,6 @@ Host: $($_.Hostname)
 OS Name: $($_.OSName)
 Total Physical Memory: $($_.TotalMemory) GB
 "@
-    Add-Content -Path "output.txt" -Value $output
-    Add-Content -Path "output.txt" -Value ""
-}
+} | Out-File "output.txt" -Append
 
 Write-Host "System information retrieval completed."
