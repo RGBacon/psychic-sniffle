@@ -20,8 +20,8 @@ $programs = @(
     @{ Name = "VidyoConnect";   Path = Join-Path $PSScriptRoot "apps\VidyoConnectInstaller-win64-TAG_VCOND_21_6_4_17476.exe";  Args = "/S" },
 	@{ Name = "Imprivata Type1";   Path = Join-Path $PSScriptRoot "\apps\Imprivata\type1.bat";  Args = "/S" },
 	@{ Name = "Imprivata Type2";   Path = Join-Path $PSScriptRoot "\apps\Imprivata\type2.bat";  Args = " " },
-	#@{ Name = "VidyoConnect";   Path = Join-Path $PSScriptRoot "\apps\Imprivata\type2.bat";  Args = " " },
-	#@{ Name = "VidyoConnect";   Path = Join-Path $PSScriptRoot "\apps\Imprivata\type2.bat";  Args = " " },
+	@{ Name = "DragonMic1";   Path = Join-Path $PSScriptRoot "\apps\Draon Mic_Nuance\setup.exe";  Args = "/S /v /qn" },
+	@{ Name = "DragonMic2";   Path = Join-Path $PSScriptRoot "\apps\Draon Mic_Nuance\install.bat";  Args = " " },
 	#@{ Name = "VidyoConnect";   Path = Join-Path $PSScriptRoot "\apps\Imprivata\type2.bat";  Args = " " },
 	#@{ Name = "VidyoConnect";   Path = Join-Path $PSScriptRoot "\apps\Imprivata\type2.bat";  Args = " " },
 	#@{ Name = "VidyoConnect";   Path = Join-Path $PSScriptRoot "\apps\Imprivata\type2.bat";  Args = " " },
@@ -44,7 +44,7 @@ function Run-Program {
         Start-Process -FilePath $programPath -ArgumentList $arguments -PassThru -Wait
 
         # Show message on success
-        [System.Windows.Forms.MessageBox]::Show("$programName completed successfully.", "Completion", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+        # [System.Windows.Forms.MessageBox]::Show("$programName completed successfully.", "Completion", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
     } catch {
         # Show error message if something goes wrong
         [System.Windows.Forms.MessageBox]::Show("Error running $programName. Please check the file path and try again.`n$_", "Error", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
