@@ -78,15 +78,24 @@ class VistaSnipeBot {
             
             if (timeMatch) {
                 const timeStr = timeMatch[1].trim();
+                console.log(`🔍 Raw time string: "${timeStr}"`);
+                
+                const hoursMatch = timeStr.match(/(\d+)\s*Hours?/);
                 const minutesMatch = timeStr.match(/(\d+)\s*Minutes?/);
                 const secondsMatch = timeStr.match(/(\d+)\s*Seconds?/);
                 
-                if (minutesMatch || secondsMatch) {
+                console.log(`🔍 Time matches - Hours: ${hoursMatch ? hoursMatch[1] : 'none'}, Minutes: ${minutesMatch ? minutesMatch[1] : 'none'}, Seconds: ${secondsMatch ? secondsMatch[1] : 'none'}`);
+                
+                if (hoursMatch || minutesMatch || secondsMatch) {
+                    const hours = hoursMatch ? parseInt(hoursMatch[1]) : 0;
                     const minutes = minutesMatch ? parseInt(minutesMatch[1]) : 0;
                     const seconds = secondsMatch ? parseInt(secondsMatch[1]) : 0;
-                    const totalSeconds = minutes * 60 + seconds;
+                    const totalSeconds = hours * 3600 + minutes * 60 + seconds;
                     
                     endTime = new Date(Date.now() + totalSeconds * 1000);
+                    
+                    console.log(`🔍 Calculated time - Hours: ${hours}, Minutes: ${minutes}, Seconds: ${seconds}, Total: ${totalSeconds}s`);
+                    console.log(`🔍 End time: ${endTime.toLocaleString()}`);
                 }
             }
 
@@ -182,8 +191,10 @@ class VistaSnipeBot {
         if (auction.endTime && info.isActive) {
             const timeUntilEnd = (auction.endTime - Date.now()) / 1000; // seconds
             
+            console.log(`🔍 Auction ${auctionId} time check: ${this.formatTimeRemaining(auction.endTime)} remaining (${timeUntilEnd.toFixed(1)}s)`);
+            
             if (timeUntilEnd <= this.snipeTime * 60 && timeUntilEnd > 0) {
-                console.log(`🚨 SNIPE TIME! Auction ${auctionId} ends in ${(timeUntilEnd / 60).toFixed(1)} minutes`);
+                console.log(`🚨 SNIPE TIME! Auction ${auctionId} ends in ${this.formatTimeRemaining(auction.endTime)}`);
                 this.startSnipe(auctionId);
             }
         }
@@ -199,43 +210,59 @@ class VistaSnipeBot {
         // Stop regular monitoring, start aggressive sniping
         this.stopMonitoring(auctionId);
         
-        const snipeInterval = setInterval(async () => {
-            if (auction.bidAttempts >= this.maxRetries) {
-                console.log(`❌ Max bid attempts reached for auction ${auctionId}`);
-                clearInterval(snipeInterval);
-                this.removeAuction(auctionId);
-                return;
-            }
-
-            // Check if auction is still worth bidding on
+        // Calculate when to place the final bid (30 seconds before end)
+        const timeUntilEnd = (auction.endTime - Date.now()) / 1000; // seconds
+        const delayUntilFinalBid = (timeUntilEnd - this.finalBidTime) * 1000; // milliseconds
+        
+        console.log(`⏰ Final bid scheduled in ${this.formatTimeRemaining(new Date(Date.now() + delayUntilFinalBid))}`);
+        
+        // Schedule the final bid at exactly 30 seconds before end
+        setTimeout(async () => {
             if (!this.isWorthBidding(auctionId)) {
-                clearInterval(snipeInterval);
+                console.log(`❌ Auction ${auctionId} no longer worth bidding on`);
                 return;
             }
-
-            // Calculate time until end
-            const timeUntilEnd = (auction.endTime - Date.now()) / 1000; // seconds
             
-            // Place bid at exactly 30 seconds before end
-            if (timeUntilEnd <= this.finalBidTime && timeUntilEnd > 0) {
-                console.log(`🚀 FINAL BID! Auction ${auctionId} ends in ${timeUntilEnd.toFixed(1)} seconds - Placing max bid!`);
+            const currentTimeUntilEnd = (auction.endTime - Date.now()) / 1000;
+            console.log(`🚀 FINAL BID! Auction ${auctionId} ends in ${this.formatTimeRemaining(auction.endTime)} - Placing max bid!`);
+            
+            const result = await this.placeBid(auctionId, auction.maxBid);
+            auction.bidAttempts++;
+            
+            if (result && result.Status === 'WINNING') {
+                console.log(`🎉 SUCCESS! Final bid won auction ${auctionId}!`);
+                this.removeAuction(auctionId);
+            } else {
+                console.log(`⚠️ Final bid placed but not winning auction ${auctionId}`);
+            }
+            
+            console.log(`✅ Final bid placed for auction ${auctionId} - Snipe complete`);
+            
+        }, delayUntilFinalBid);
+        
+        // Also place competitive bids if we have time
+        if (timeUntilEnd > this.finalBidTime + 30) { // If more than 1 minute left
+            const competitiveBidInterval = setInterval(async () => {
+                if (auction.bidAttempts >= this.maxRetries || !this.isWorthBidding(auctionId)) {
+                    clearInterval(competitiveBidInterval);
+                    return;
+                }
+                
+                const currentTimeUntilEnd = (auction.endTime - Date.now()) / 1000;
+                
+                // Stop competitive bidding when we're 30 seconds away
+                if (currentTimeUntilEnd <= this.finalBidTime) {
+                    clearInterval(competitiveBidInterval);
+                    return;
+                }
+                
+                // Place a competitive bid
+                console.log(`⚡ Competitive bid! Auction ${auctionId} ends in ${this.formatTimeRemaining(auction.endTime)}`);
                 await this.placeBid(auctionId, auction.maxBid);
                 auction.bidAttempts++;
                 
-                // After final bid, stop sniping
-                clearInterval(snipeInterval);
-                console.log(`✅ Final bid placed for auction ${auctionId} - Snipe complete`);
-                return;
-            }
-            
-            // If we're getting close but not at final bid time, place a bid to stay competitive
-            if (timeUntilEnd <= 60 && timeUntilEnd > this.finalBidTime) { // Between 1 minute and 30 seconds
-                console.log(`⚡ Competitive bid! Auction ${auctionId} ends in ${timeUntilEnd.toFixed(1)} seconds`);
-                await this.placeBid(auctionId, auction.maxBid);
-                auction.bidAttempts++;
-            }
-            
-        }, this.bidInterval * 1000);
+            }, this.bidInterval * 1000);
+        }
     }
 
     // Place a bid
@@ -264,23 +291,36 @@ class VistaSnipeBot {
             });
             
             const data = await response.text();
+            console.log(`📋 Raw bid response for ${auctionId}:`, data);
             
+            // Try to parse as JSON first
             try {
                 const jsonData = JSON.parse(data);
-                console.log(`📋 Bid response for ${auctionId}:`, jsonData);
+                console.log(`📋 Parsed bid response for ${auctionId}:`, jsonData);
                 
                 if (jsonData.Status === 'WINNING') {
                     console.log(`🎉 SUCCESS! You're winning auction ${auctionId}!`);
                     this.removeAuction(auctionId);
                 } else if (jsonData.Status === 'LOSING') {
                     console.log(`⚠️ Bid placed but not winning auction ${auctionId}`);
+                } else if (jsonData.Status === 'Success') {
+                    console.log(`✅ Bid placed successfully on auction ${auctionId}`);
                 }
                 
                 return jsonData;
                 
             } catch (e) {
-                console.log(`Response for ${auctionId} is not JSON:`, data);
-                return data;
+                // If not JSON, check for common success indicators
+                if (data.includes('Success') || data.includes('OK') || data.includes('success')) {
+                    console.log(`✅ Bid appears successful (non-JSON response): ${data}`);
+                    return { Status: 'Success', Message: data };
+                } else if (data.includes('Error') || data.includes('Failed') || data.includes('error')) {
+                    console.log(`❌ Bid appears to have failed: ${data}`);
+                    return { Status: 'Error', Message: data };
+                } else {
+                    console.log(`⚠️ Unknown bid response format: ${data}`);
+                    return { Status: 'Unknown', Message: data };
+                }
             }
             
         } catch (error) {
@@ -307,6 +347,27 @@ class VistaSnipeBot {
         });
     }
 
+    // Format time remaining in a human-readable format
+    formatTimeRemaining(endTime) {
+        if (!endTime) return 'unknown';
+        
+        const timeUntilEnd = Math.max(0, Math.floor((endTime - Date.now()) / 1000));
+        
+        if (timeUntilEnd === 0) return 'ended';
+        
+        const hours = Math.floor(timeUntilEnd / 3600);
+        const minutes = Math.floor((timeUntilEnd % 3600) / 60);
+        const seconds = timeUntilEnd % 60;
+        
+        if (hours > 0) {
+            return `${hours}h ${minutes}m ${seconds}s`;
+        } else if (minutes > 0) {
+            return `${minutes}m ${seconds}s`;
+        } else {
+            return `${seconds}s`;
+        }
+    }
+
     // Show current auctions
     showAuctions() {
         console.log(`\n📋 CURRENT SNIPE LIST (${this.auctions.size} auctions):`);
@@ -320,7 +381,7 @@ class VistaSnipeBot {
         this.auctions.forEach((auction, auctionId) => {
             const status = auction.status === 'active' ? '🟢' : '🔴';
             const timeLeft = auction.endTime ? 
-                `${Math.max(0, Math.floor((auction.endTime - Date.now()) / 1000 / 60))}m` : 'unknown';
+                this.formatTimeRemaining(auction.endTime) : 'unknown';
             
             console.log(`${status} ${auctionId}: Max $${auction.maxBid} | Current $${auction.currentPrice} | Min $${auction.minBid} | Time: ${timeLeft} | ${auction.description}`);
         });
@@ -366,7 +427,7 @@ class VistaSnipeBot {
 
         if (auction.endTime) {
             const timeUntilEnd = (auction.endTime - Date.now()) / 1000;
-            console.log(`⏰ Auction ends in ${timeUntilEnd.toFixed(1)} seconds`);
+            console.log(`⏰ Auction ends in ${this.formatTimeRemaining(auction.endTime)}`);
             
             if (timeUntilEnd <= 0) {
                 console.log(`❌ Auction ${auctionId} has already ended`);
