@@ -212,32 +212,22 @@ class VistaSnipeBot {
         
         // Calculate when to place the final bid (30 seconds before end)
         const timeUntilEnd = (auction.endTime - Date.now()) / 1000; // seconds
+        
+        // If we're already within 30 seconds, place bid immediately
+        if (timeUntilEnd <= this.finalBidTime) {
+            console.log(`🚨 URGENT: Auction ${auctionId} ends in ${this.formatTimeRemaining(auction.endTime)} - Placing bid immediately!`);
+            this.placeFinalBid(auctionId);
+            return;
+        }
+        
+        // Calculate delay for final bid (30 seconds before end)
         const delayUntilFinalBid = (timeUntilEnd - this.finalBidTime) * 1000; // milliseconds
         
         console.log(`⏰ Final bid scheduled in ${this.formatTimeRemaining(new Date(Date.now() + delayUntilFinalBid))}`);
         
         // Schedule the final bid at exactly 30 seconds before end
         setTimeout(async () => {
-            if (!this.isWorthBidding(auctionId)) {
-                console.log(`❌ Auction ${auctionId} no longer worth bidding on`);
-                return;
-            }
-            
-            const currentTimeUntilEnd = (auction.endTime - Date.now()) / 1000;
-            console.log(`🚀 FINAL BID! Auction ${auctionId} ends in ${this.formatTimeRemaining(auction.endTime)} - Placing max bid!`);
-            
-            const result = await this.placeBid(auctionId, auction.maxBid);
-            auction.bidAttempts++;
-            
-            if (result && result.Status === 'WINNING') {
-                console.log(`🎉 SUCCESS! Final bid won auction ${auctionId}!`);
-                this.removeAuction(auctionId);
-            } else {
-                console.log(`⚠️ Final bid placed but not winning auction ${auctionId}`);
-            }
-            
-            console.log(`✅ Final bid placed for auction ${auctionId} - Snipe complete`);
-            
+            this.placeFinalBid(auctionId);
         }, delayUntilFinalBid);
         
         // Also place competitive bids if we have time
@@ -264,6 +254,82 @@ class VistaSnipeBot {
             }, this.bidInterval * 1000);
         }
     }
+    
+    // Helper method to place final bid
+    async placeFinalBid(auctionId) {
+        const auction = this.auctions.get(auctionId);
+        if (!auction) return;
+        
+        if (!this.isWorthBidding(auctionId)) {
+            console.log(`❌ Auction ${auctionId} no longer worth bidding on`);
+            return;
+        }
+        
+        const currentTimeUntilEnd = (auction.endTime - Date.now()) / 1000;
+        console.log(`🚀 FINAL BID! Auction ${auctionId} ends in ${this.formatTimeRemaining(auction.endTime)} - Placing max bid!`);
+        
+        const result = await this.placeBid(auctionId, auction.maxBid);
+        auction.bidAttempts++;
+        
+        if (result && result.Status === 'WINNING') {
+            console.log(`🎉 SUCCESS! Final bid won auction ${auctionId}!`);
+            this.removeAuction(auctionId);
+        } else if (result && result.Status === 'LOSING') {
+            console.log(`✅ Final bid placed successfully! You're not winning auction ${auctionId} (Next price: $${result.NextPrice || 'unknown'})`);
+        } else if (result && result.Status === 'Success') {
+            console.log(`✅ Final bid placed successfully on auction ${auctionId}`);
+        } else {
+            console.log(`⚠️ Final bid placed but response unclear:`, result);
+        }
+        
+        console.log(`✅ Final bid placed for auction ${auctionId} - Snipe complete`);
+    }
+
+    // Helper: wait for SignalR ListingActionResponse for a specific listing
+    waitForActionResponse(listingId, timeoutMs = 3500) {
+        return new Promise((resolve) => {
+            try {
+                const $jq = window.jQuery || window.$;
+                if (!$jq || typeof $jq !== 'function') {
+                    resolve(null);
+                    return;
+                }
+                let settled = false;
+                const handler = function (event, data) {
+                    if (settled) return;
+                    if (data && String(data.Action_ListingID) === String(listingId)) {
+                        settled = true;
+                        $jq(document).off('SignalR_ListingActionResponse', handler);
+                        resolve(data);
+                    }
+                };
+                $jq(document).on('SignalR_ListingActionResponse', handler);
+                setTimeout(() => {
+                    if (settled) return;
+                    settled = true;
+                    try { $jq(document).off('SignalR_ListingActionResponse', handler); } catch (_) {}
+                    resolve(null);
+                }, timeoutMs);
+            } catch (_) {
+                resolve(null);
+            }
+        });
+    }
+
+    // Helper: normalize SignalR response into a consistent shape
+    normalizeSignalRBidResponse(signalRData) {
+        if (!signalRData) return null;
+        const status = signalRData.Accepted ? 'Success'
+            : (signalRData.Error || signalRData.ReasonCode ? 'Error' : 'Unknown');
+        return {
+            Status: status,
+            NextPrice: signalRData.NextPrice,
+            MaxBidAmount: signalRData.MaxBidAmount,
+            ReasonCode: signalRData.ReasonCode,
+            Message: signalRData.Message,
+            Raw: signalRData
+        };
+    }
 
     // Place a bid
     async placeBid(auctionId, bidAmount) {
@@ -280,6 +346,10 @@ class VistaSnipeBot {
             });
             
             const url = `${baseUrl}?${params.toString()}`;
+            console.log(`🌐 Bid URL: ${url}`);
+
+            // Start listening for SignalR response before firing the request
+            const signalrPromise = this.waitForActionResponse(auctionId, 4000).catch(() => null);
             
             const response = await fetch(url, {
                 method: 'GET',
@@ -290,6 +360,9 @@ class VistaSnipeBot {
                 }
             });
             
+            console.log(`📡 Response status: ${response.status} ${response.statusText}`);
+            console.log(`📡 Response headers:`, Object.fromEntries(response.headers.entries()));
+            
             const data = await response.text();
             console.log(`📋 Raw bid response for ${auctionId}:`, data);
             
@@ -297,26 +370,45 @@ class VistaSnipeBot {
             try {
                 const jsonData = JSON.parse(data);
                 console.log(`📋 Parsed bid response for ${auctionId}:`, jsonData);
+                console.log(`📋 Response details - Status: ${jsonData.Status}, NextPrice: $${jsonData.NextPrice || 'N/A'}, MaxBidAmount: $${jsonData.MaxBidAmount || 'N/A'}`);
                 
                 if (jsonData.Status === 'WINNING') {
                     console.log(`🎉 SUCCESS! You're winning auction ${auctionId}!`);
                     this.removeAuction(auctionId);
                 } else if (jsonData.Status === 'LOSING') {
-                    console.log(`⚠️ Bid placed but not winning auction ${auctionId}`);
+                    console.log(`✅ Bid placed successfully! You're not winning auction ${auctionId} (Next price: $${jsonData.NextPrice || 'unknown'})`);
                 } else if (jsonData.Status === 'Success') {
                     console.log(`✅ Bid placed successfully on auction ${auctionId}`);
+                } else {
+                    console.log(`⚠️ Bid response received but status unclear:`, jsonData);
                 }
                 
                 return jsonData;
                 
             } catch (e) {
-                // If not JSON, check for common success indicators
-                if (data.includes('Success') || data.includes('OK') || data.includes('success')) {
+                // If not JSON, prefer the SignalR event if it arrives shortly after
+                const signalData = await Promise.race([
+                    signalrPromise,
+                    new Promise((res) => setTimeout(() => res(null), 1200))
+                ]);
+                if (signalData) {
+                    console.log('📡 SignalR ListingActionResponse:', signalData);
+                    const normalized = this.normalizeSignalRBidResponse(signalData);
+                    console.log('📋 Normalized SignalR bid response:', normalized);
+                    return normalized;
+                }
+
+                // Fallback heuristics on response text
+                const lowerData = (data || '').toLowerCase();
+                if (lowerData.includes('success') || lowerData.includes('ok') || lowerData.includes('accepted') || lowerData.includes('bid placed')) {
                     console.log(`✅ Bid appears successful (non-JSON response): ${data}`);
                     return { Status: 'Success', Message: data };
-                } else if (data.includes('Error') || data.includes('Failed') || data.includes('error')) {
+                } else if (lowerData.includes('error') || lowerData.includes('failed') || lowerData.includes('rejected') || lowerData.includes('invalid')) {
                     console.log(`❌ Bid appears to have failed: ${data}`);
                     return { Status: 'Error', Message: data };
+                } else if (lowerData.includes('already') || lowerData.includes('higher') || lowerData.includes('minimum')) {
+                    console.log(`⚠️ Bid may have failed due to requirements: ${data}`);
+                    return { Status: 'Requirements', Message: data };
                 } else {
                     console.log(`⚠️ Unknown bid response format: ${data}`);
                     return { Status: 'Unknown', Message: data };
