@@ -1154,11 +1154,30 @@ function Invoke-NetworkAnalysis {
     foreach ($result in $results) {
         if ($result.Success) {
             try {
-                $trace = & tracert -h 20 -w 10000 $result.Hostname 2>$null | Select-Object -Skip 4 -First 21
-                $result.Data.TraceRoute = $trace -join "`n"
+                Write-ScriptLog "Tracing route to $($result.Hostname)..." -Type "Info"
+                $traceOutput = & tracert -h 20 -w 10000 $result.Hostname 2>&1
+                
+                if ($LASTEXITCODE -eq 0 -and $traceOutput) {
+                    # Filter out empty lines and header lines
+                    $trace = $traceOutput | Where-Object { 
+                        $_.Trim() -ne '' -and 
+                        $_ -notmatch '^Tracing route to' -and 
+                        $_ -notmatch '^over a maximum of' -and
+                        $_ -notmatch '^Trace complete'
+                    } | Select-Object -First 20
+                    
+                    if ($trace) {
+                        $result.Data.TraceRoute = $trace -join "`n"
+                    } else {
+                        $result.Data.TraceRoute = "No route data available"
+                    }
+                } else {
+                    $result.Data.TraceRoute = "Trace failed (Exit code: $LASTEXITCODE)"
+                }
             }
             catch {
-                $result.Data.TraceRoute = "Trace failed"
+                $result.Data.TraceRoute = "Trace failed: $($_.Exception.Message)"
+                Write-ScriptLog "Traceroute failed for $($result.Hostname): $($_.Exception.Message)" -Type "Warning"
             }
         }
     }
@@ -1168,50 +1187,81 @@ function Invoke-NetworkAnalysis {
     $subnetMap = @{}
     
     foreach ($result in $results) {
-        if ($result.Success -and $result.Data.Network) {
-            # Build subnet map
-            foreach ($adapter in $result.Data.Network) {
-                if ($adapter.IPAddress) {
-                    $subnet = $adapter.IPAddress.Split('.')[0..2] -join '.'
-                    if (-not $subnetMap.ContainsKey($subnet)) {
-                        $subnetMap[$subnet] = @()
+        try {
+            if ($result.Success -and $result.Data.Network) {
+                # Build subnet map
+                foreach ($adapter in $result.Data.Network) {
+                    if ($adapter.IPAddress -and $adapter.IPAddress.Trim() -ne '') {
+                        try {
+                            $subnet = $adapter.IPAddress.Split('.')[0..2] -join '.'
+                            if (-not $subnetMap.ContainsKey($subnet)) {
+                                $subnetMap[$subnet] = @()
+                            }
+                            $subnetMap[$subnet] += $result.Hostname
+                        }
+                        catch {
+                            Write-ScriptLog "Error processing IP address for $($result.Hostname): $($_.Exception.Message)" -Type "Warning"
+                        }
                     }
-                    $subnetMap[$subnet] += $result.Hostname
                 }
+                
+                # Output individual host info
+                $null = $output.AppendLine("Host: $($result.Hostname)")
+                foreach ($adapter in $result.Data.Network) {
+                    $null = $output.AppendLine("  Adapter: $($adapter.Description)")
+                    $null = $output.AppendLine("    IP: $($adapter.IPAddress)")
+                    $null = $output.AppendLine("    Gateway: $($adapter.DefaultGateway)")
+                }
+                
+                if ($result.Data.TraceRoute) {
+                    $null = $output.AppendLine("  Route:")
+                    $null = $output.AppendLine($result.Data.TraceRoute)
+                }
+                
+                $null = $output.AppendLine("")
             }
-            
-            # Output individual host info
-            $null = $output.AppendLine("Host: $($result.Hostname)")
-            foreach ($adapter in $result.Data.Network) {
-                $null = $output.AppendLine("  Adapter: $($adapter.Description)")
-                $null = $output.AppendLine("    IP: $($adapter.IPAddress)")
-                $null = $output.AppendLine("    Gateway: $($adapter.DefaultGateway)")
+            elseif (-not $result.Success) {
+                $null = $output.AppendLine("Host: $($result.Hostname) - ERROR: $($result.Error)")
+                $null = $output.AppendLine("")
             }
-            
-            if ($result.Data.TraceRoute) {
-                $null = $output.AppendLine("  Route:")
-                $null = $output.AppendLine($result.Data.TraceRoute)
-            }
-            
+        }
+        catch {
+            Write-ScriptLog "Error processing result for $($result.Hostname): $($_.Exception.Message)" -Type "Warning"
+            $null = $output.AppendLine("Host: $($result.Hostname) - PROCESSING ERROR: $($_.Exception.Message)")
             $null = $output.AppendLine("")
         }
     }
     
     # Add subnet summary
-    $null = $output.AppendLine("`n" + ("=" * 50))
-    $null = $output.AppendLine("SUBNET SUMMARY")
-    $null = $output.AppendLine("=" * 50)
-    
-    foreach ($subnet in $subnetMap.Keys | Sort-Object) {
-        $null = $output.AppendLine("`nSubnet $subnet.*: $($subnetMap[$subnet].Count) hosts")
-        foreach ($host in $subnetMap[$subnet] | Sort-Object) {
-            $null = $output.AppendLine("  - $host")
+    try {
+        $null = $output.AppendLine("`n" + ("=" * 50))
+        $null = $output.AppendLine("SUBNET SUMMARY")
+        $null = $output.AppendLine("=" * 50)
+        
+        if ($subnetMap.Count -gt 0) {
+            foreach ($subnet in $subnetMap.Keys | Sort-Object) {
+                $null = $output.AppendLine("`nSubnet $subnet.*: $($subnetMap[$subnet].Count) hosts")
+                foreach ($host in $subnetMap[$subnet] | Sort-Object) {
+                    $null = $output.AppendLine("  - $host")
+                }
+            }
+        } else {
+            $null = $output.AppendLine("`nNo subnet information available")
         }
     }
+    catch {
+        Write-ScriptLog "Error creating subnet summary: $($_.Exception.Message)" -Type "Warning"
+        $null = $output.AppendLine("`nError generating subnet summary")
+    }
     
-    Add-Content -Path $outputFile -Value $output.ToString()
-    
-    Write-ScriptLog "Network analysis completed. Results saved to: $outputFile" -Type "Success"
+    # Write results to file
+    try {
+        Add-Content -Path $outputFile -Value $output.ToString()
+        Write-ScriptLog "Network analysis completed. Results saved to: $outputFile" -Type "Success"
+    }
+    catch {
+        Write-ScriptLog "Error writing results to file: $($_.Exception.Message)" -Type "Error"
+    }
     
     Invoke-Pause
     Show-Menu -MenuName "Main"
