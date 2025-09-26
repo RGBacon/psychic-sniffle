@@ -283,7 +283,7 @@ function Get-RemoteSystemInfoScriptBlock {
             
             try {
                 # Get OS info
-                $os = Get-WmiObject -ComputerName $ComputerName -Class Win32_OperatingSystem -ErrorAction Stop
+                $os = Get-WmiObject -ComputerName $ComputerName -Class Win32_OperatingSystem -ErrorAction Stop -TimeoutSec $script:Config.Timeout
                 $result.Data.OS = @{
                     Name = $os.Caption
                     Version = $os.Version
@@ -293,8 +293,8 @@ function Get-RemoteSystemInfoScriptBlock {
                 }
                 
                 # Get hardware info
-                $cs = Get-WmiObject -ComputerName $ComputerName -Class Win32_ComputerSystem -ErrorAction Stop
-                $cpu = Get-WmiObject -ComputerName $ComputerName -Class Win32_Processor -ErrorAction Stop | Select-Object -First 1
+                $cs = Get-WmiObject -ComputerName $ComputerName -Class Win32_ComputerSystem -ErrorAction Stop -TimeoutSec $script:Config.Timeout
+                $cpu = Get-WmiObject -ComputerName $ComputerName -Class Win32_Processor -ErrorAction Stop -TimeoutSec $script:Config.Timeout | Select-Object -First 1
                 
                 $result.Data.Hardware = @{
                     Manufacturer = $cs.Manufacturer
@@ -335,20 +335,20 @@ function Get-RemoteSystemInfoScriptBlock {
                     }
                     catch {
                         # Fallback to WMI if registry fails
-                        $products = Get-WmiObject -ComputerName $ComputerName -Class Win32_Product -ErrorAction Stop
+                        $products = Get-WmiObject -ComputerName $ComputerName -Class Win32_Product -ErrorAction Stop -TimeoutSec $script:Config.Timeout
                         $result.Data.Software = $products | Select-Object -ExpandProperty Name
                     }
                 }
                 
                 # Get printers
                 if ($Options.CheckPrinters) {
-                    $printers = Get-WmiObject -ComputerName $ComputerName -Class Win32_Printer -ErrorAction Stop
+                    $printers = Get-WmiObject -ComputerName $ComputerName -Class Win32_Printer -ErrorAction Stop -TimeoutSec $script:Config.Timeout
                     $result.Data.Printers = $printers | Select-Object Name, DriverName, PortName, Shared, ShareName
                 }
                 
                 # Get network info
                 if ($Options.CheckNetwork) {
-                    $adapters = Get-WmiObject -ComputerName $ComputerName -Class Win32_NetworkAdapterConfiguration -Filter "IPEnabled = True" -ErrorAction Stop
+                    $adapters = Get-WmiObject -ComputerName $ComputerName -Class Win32_NetworkAdapterConfiguration -Filter "IPEnabled = True" -ErrorAction Stop -TimeoutSec $script:Config.Timeout
                     $result.Data.Network = $adapters | ForEach-Object {
                         @{
                             Description = $_.Description
@@ -363,7 +363,7 @@ function Get-RemoteSystemInfoScriptBlock {
                 
                 # Get storage info
                 if ($Options.CheckStorage) {
-                    $disks = Get-WmiObject -ComputerName $ComputerName -Class Win32_LogicalDisk -Filter "DriveType = 3" -ErrorAction Stop
+                    $disks = Get-WmiObject -ComputerName $ComputerName -Class Win32_LogicalDisk -Filter "DriveType = 3" -ErrorAction Stop -TimeoutSec $script:Config.Timeout
                     $result.Data.Storage = $disks | ForEach-Object {
                         @{
                             Drive = $_.DeviceID
@@ -375,27 +375,41 @@ function Get-RemoteSystemInfoScriptBlock {
                     }
                 }
                 
-                # Get traceroute info (parallel execution)
+                # Get traceroute info (parallel execution with timeout)
                 if ($Options.CheckTracert) {
                     try {
-                        $traceOutput = & tracert -h 20 -w 10000 $ComputerName 2>&1
+                        # Use timeout to prevent hanging
+                        $traceJob = Start-Job -ScriptBlock {
+                            param($hostname)
+                            & tracert -h 20 -w 10000 $hostname 2>&1
+                        } -ArgumentList $ComputerName
                         
-                        if ($LASTEXITCODE -eq 0 -and $traceOutput) {
-                            # Filter out empty lines and header lines
-                            $trace = $traceOutput | Where-Object { 
-                                $_.Trim() -ne '' -and 
-                                $_ -notmatch '^Tracing route to' -and 
-                                $_ -notmatch '^over a maximum of' -and
-                                $_ -notmatch '^Trace complete'
-                            } | Select-Object -First 20
+                        $traceCompleted = Wait-Job -Job $traceJob -Timeout $script:Config.Timeout
+                        
+                        if ($traceCompleted) {
+                            $traceOutput = Receive-Job -Job $traceJob
+                            Remove-Job -Job $traceJob -Force
                             
-                            if ($trace) {
-                                $result.Data.TraceRoute = $trace -join "`n"
+                            if ($LASTEXITCODE -eq 0 -and $traceOutput) {
+                                # Filter out empty lines and header lines
+                                $trace = $traceOutput | Where-Object { 
+                                    $_.Trim() -ne '' -and 
+                                    $_ -notmatch '^Tracing route to' -and 
+                                    $_ -notmatch '^over a maximum of' -and
+                                    $_ -notmatch '^Trace complete'
+                                } | Select-Object -First 20
+                                
+                                if ($trace) {
+                                    $result.Data.TraceRoute = $trace -join "`n"
+                                } else {
+                                    $result.Data.TraceRoute = "No route data available"
+                                }
                             } else {
-                                $result.Data.TraceRoute = "No route data available"
+                                $result.Data.TraceRoute = "Trace failed (Exit code: $LASTEXITCODE)"
                             }
                         } else {
-                            $result.Data.TraceRoute = "Trace failed (Exit code: $LASTEXITCODE)"
+                            Remove-Job -Job $traceJob -Force
+                            $result.Data.TraceRoute = "Trace timed out after $($script:Config.Timeout) seconds"
                         }
                     }
                     catch {
@@ -439,7 +453,10 @@ function Start-ParallelJobs {
         $jobIndex++
     }
     
-    # Process jobs
+    # Process jobs with timeout handling
+    $maxWaitTime = $script:Config.Timeout * 2  # Allow 2x timeout for job completion
+    $startTime = Get-Date
+    
     while ($completed -lt $totalItems) {
         $completedJob = $jobs | Wait-Job -Any -Timeout 1
         
@@ -458,6 +475,15 @@ function Start-ParallelJobs {
                 $args = @($item) + $ArgumentList
                 $jobs += Start-Job -ScriptBlock $ScriptBlock -ArgumentList $args
                 $jobIndex++
+            }
+        }
+        else {
+            # Check for stuck jobs
+            $elapsed = (Get-Date) - $startTime
+            if ($elapsed.TotalSeconds -gt $maxWaitTime) {
+                Write-ScriptLog "Timeout reached. Cleaning up remaining jobs..." -Type "Warning"
+                $jobs | Remove-Job -Force
+                break
             }
         }
     }
@@ -915,7 +941,7 @@ function Invoke-CheckUniqueApps {
                     }
                     catch {
                         # Fallback to WMI if registry fails
-                        $products = Get-WmiObject -ComputerName $ComputerName -Class Win32_Product -ErrorAction Stop
+                        $products = Get-WmiObject -ComputerName $ComputerName -Class Win32_Product -ErrorAction Stop -TimeoutSec $script:Config.Timeout
                         $result.Data.Software = $products | Select-Object -ExpandProperty Name
                     }
                 }
