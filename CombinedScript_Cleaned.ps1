@@ -1154,7 +1154,7 @@ function Invoke-NetworkAnalysis {
     foreach ($result in $results) {
         if ($result.Success) {
             try {
-                $trace = & tracert -h 5 -w 1000 $result.Hostname 2>$null | Select-Object -Skip 4 -First 6
+                $trace = & tracert -h 20 -w 10000 $result.Hostname 2>$null | Select-Object -Skip 4 -First 21
                 $result.Data.TraceRoute = $trace -join "`n"
             }
             catch {
