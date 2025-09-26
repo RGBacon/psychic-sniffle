@@ -7,7 +7,6 @@ $script:Config = @{
     HostsFile = "hosts.txt"
     OutputFiles = @{
         SunquestResults = "sunquest_results.txt"
-        SystemInfo = "system_info_results.txt"
         LogFile = "script_log.txt"
         UniqueApps = "unique_apps.txt"
         EnhancedInfo = "enhanced_system_info.txt"
@@ -21,6 +20,7 @@ $script:Config = @{
     SystemInfo = @{
         CheckSunquest = $false
         CheckPrinters = $false
+        CheckTracert = $false
     }
     # CheckApps options
     CheckApps = @{
@@ -270,13 +270,9 @@ function Get-RemoteSystemInfoScriptBlock {
     return {
         param($ComputerName, $Options)
         
-        # Function definition included in job
-        function Get-RemoteSystemInfo {
-            param(
-                [Parameter(Mandatory)][string]$ComputerName,
-                [hashtable]$Options = @{},
-                [int]$Timeout = 30
-            )
+        # Embedded Get-RemoteSystemInfo function for parallel jobs
+        $remoteInfoFunction = {
+            param($ComputerName, $Options)
             
             $result = @{
                 Hostname = $ComputerName
@@ -387,8 +383,8 @@ function Get-RemoteSystemInfoScriptBlock {
             return $result
         }
         
-        # Call the function
-        Get-RemoteSystemInfo -ComputerName $ComputerName -Options $Options
+        # Call the embedded function
+        & $remoteInfoFunction -ComputerName $ComputerName -Options $Options
     }
 }
 
@@ -449,10 +445,9 @@ $script:MenuDefinitions = @{
         Title = "Jeremy's All In One Utility"
         Options = @(
             @{Text = "Enhanced System Discovery"; Action = { Show-Menu -MenuName "SystemInfo" }}
-            @{Text = "Check Sunquest Lab Applications"; Action = { Invoke-SunquestCheck }}
-            @{Text = "Send Messages to Hosts"; Action = { Show-Menu -MenuName "Messages" }}
             @{Text = "Check Unique Applications"; Action = { Invoke-CheckUniqueApps }}
             @{Text = "Network Topology Analysis"; Action = { Invoke-NetworkAnalysis }}
+            @{Text = "Send Messages to Hosts"; Action = { Show-Menu -MenuName "Messages" }}
             @{Text = "Settings"; Action = { Show-Menu -MenuName "Settings" }}
             @{Text = "Exit"; Action = { exit }}
         )
@@ -716,80 +711,6 @@ function Configure-MessageText {
 #endregion
 
 #region System Info Functions
-function Start-SystemInfoBatch {
-    $hostsFile = Get-FilePath -Default $script:Config.HostsFile
-    $hosts = Get-HostsList -HostsFilePath $hostsFile
-    
-    if ($hosts.Count -eq 0) {
-        Invoke-Pause
-        Show-Menu -MenuName "SystemInfo"
-        return
-    }
-    
-    $outputFile = Get-FilePath -Default $script:Config.OutputFiles.SystemInfo
-    if (-not (Initialize-OutputFile -FilePath $outputFile -Title "System Information Report")) {
-        Invoke-Pause
-        Show-Menu -MenuName "SystemInfo"
-        return
-    }
-    
-    $options = @{
-        CheckSoftware = $script:Config.SystemInfo.CheckSunquest
-        CheckPrinters = $script:Config.SystemInfo.CheckPrinters
-    }
-    
-    Write-ScriptLog "Retrieving system information from $($hosts.Count) hosts..." -Type "Info"
-    
-    # Use the common scriptblock
-    $scriptBlock = Get-RemoteSystemInfoScriptBlock
-    $results = Start-ParallelJobs -InputObjects $hosts -ScriptBlock $scriptBlock -ArgumentList $options -Activity "Retrieving System Info"
-    
-    # Process and format results
-    $output = New-Object System.Text.StringBuilder
-    $successCount = 0
-    $errorCount = 0
-    
-    foreach ($result in $results) {
-        if ($result.Success) {
-            $successCount++
-            $null = $output.AppendLine("Host: $($result.Hostname)")
-            $null = $output.AppendLine("OS: $($result.Data.OS.Name)")
-            $null = $output.AppendLine("Model: $($result.Data.Hardware.Model)")
-            $null = $output.AppendLine("Memory: $($result.Data.OS.TotalMemoryGB) GB")
-            $null = $output.AppendLine("Processor: $($result.Data.Hardware.Processor)")
-            
-            if ($options.CheckPrinters -and $result.Data.Printers) {
-                $null = $output.AppendLine("Printers:")
-                foreach ($printer in $result.Data.Printers) {
-                    $null = $output.AppendLine("  - $($printer.Name)")
-                }
-            }
-            
-            if ($options.CheckSoftware) {
-                $sunquestApps = $result.Data.Software | Where-Object { $_ -like "Sunquest Lab*" }
-                if ($sunquestApps) {
-                    $null = $output.AppendLine("Sunquest Applications:")
-                    foreach ($app in $sunquestApps) {
-                        $null = $output.AppendLine("  - $app")
-                    }
-                }
-            }
-        }
-        else {
-            $errorCount++
-            $null = $output.AppendLine("Host: $($result.Hostname) - ERROR: $($result.Error)")
-        }
-        $null = $output.AppendLine(("-" * 50))
-    }
-    
-    Add-Content -Path $outputFile -Value $output.ToString()
-    
-    Write-ScriptLog "`nCompleted. Success: $successCount, Errors: $errorCount" -Type "Success"
-    Write-ScriptLog "Results saved to: $outputFile" -Type "Info"
-    
-    Invoke-Pause
-    Show-Menu -MenuName "SystemInfo"
-}
 
 function Start-SingleHostCheck {
     $hostname = Read-Host "Enter hostname to check"
@@ -803,6 +724,7 @@ function Start-SingleHostCheck {
     $options = @{
         CheckSoftware = $script:Config.SystemInfo.CheckSunquest
         CheckPrinters = $script:Config.SystemInfo.CheckPrinters
+        CheckTracert = $script:Config.SystemInfo.CheckTracert
         CheckNetwork = $true
         CheckStorage = $true
     }
@@ -830,6 +752,38 @@ function Start-SingleHostCheck {
                 Write-Host "$($adapter.Description): $($adapter.IPAddress)"
             }
         }
+        
+        # Tracert Information
+        if ($options.CheckTracert) {
+            try {
+                Write-Host "`nTracert Route:" -ForegroundColor $script:Config.Colors.Info
+                $traceOutput = & tracert -h 20 -w 10000 $hostname 2>&1
+                
+                if ($LASTEXITCODE -eq 0 -and $traceOutput) {
+                    # Filter out empty lines and header lines
+                    $trace = $traceOutput | Where-Object { 
+                        $_.Trim() -ne '' -and 
+                        $_ -notmatch '^Tracing route to' -and 
+                        $_ -notmatch '^over a maximum of' -and
+                        $_ -notmatch '^Trace complete'
+                    } | Select-Object -First 20
+                    
+                    if ($trace) {
+                        foreach ($line in $trace) {
+                            Write-Host "  $line"
+                        }
+                    } else {
+                        Write-Host "  No route data available"
+                    }
+                } else {
+                    Write-Host "  Trace failed (Exit code: $LASTEXITCODE)"
+                }
+            }
+            catch {
+                Write-Host "  Trace failed: $($_.Exception.Message)"
+                Write-ScriptLog "Traceroute failed for ${hostname}: $($_.Exception.Message)" -Type "Warning"
+            }
+        }
     }
     else {
         Write-ScriptLog "Error: $($result.Error)" -Type "Error"
@@ -846,9 +800,10 @@ function Configure-SystemInfoOptions {
     Write-Host "Current Settings:" -ForegroundColor $script:Config.Colors.Info
     Write-Host "1. Check Sunquest Apps: $(if ($script:Config.SystemInfo.CheckSunquest) { 'Enabled' } else { 'Disabled' })"
     Write-Host "2. Check Printers: $(if ($script:Config.SystemInfo.CheckPrinters) { 'Enabled' } else { 'Disabled' })"
+    Write-Host "3. Check Tracert: $(if ($script:Config.SystemInfo.CheckTracert) { 'Enabled' } else { 'Disabled' })"
     Write-Host
     
-    $choice = Read-Host "Toggle option (1-2) or press Enter to return"
+    $choice = Read-Host "Toggle option (1-3) or press Enter to return"
     
     switch ($choice) {
         "1" {
@@ -860,6 +815,12 @@ function Configure-SystemInfoOptions {
         "2" {
             $script:Config.SystemInfo.CheckPrinters = -not $script:Config.SystemInfo.CheckPrinters
             Write-ScriptLog "Printer check $(if ($script:Config.SystemInfo.CheckPrinters) { 'enabled' } else { 'disabled' })" -Type "Success"
+            Start-Sleep -Seconds 1
+            Configure-SystemInfoOptions
+        }
+        "3" {
+            $script:Config.SystemInfo.CheckTracert = -not $script:Config.SystemInfo.CheckTracert
+            Write-ScriptLog "Tracert check $(if ($script:Config.SystemInfo.CheckTracert) { 'enabled' } else { 'disabled' })" -Type "Success"
             Start-Sleep -Seconds 1
             Configure-SystemInfoOptions
         }
@@ -907,78 +868,65 @@ function Invoke-CheckUniqueApps {
         return
     }
     
+    # Create a scriptblock that leverages the main Get-RemoteSystemInfoScriptBlock
     $scriptBlock = {
         param($hostname, $baseline, $excludePatterns)
         
-        # Include Get-RemoteSystemInfo function definition
-        $remoteInfoScript = & {
-            {
-                param($ComputerName, $Options)
-                
-                # Function definition included in job
-                function Get-RemoteSystemInfo {
-                    param(
-                        [Parameter(Mandatory)][string]$ComputerName,
-                        [hashtable]$Options = @{},
-                        [int]$Timeout = 30
-                    )
+        # Use the central system info function
+        $getSystemInfoScript = {
+            param($ComputerName, $Options)
+            
+            $result = @{
+                Hostname = $ComputerName
+                Success = $true
+                Data = @{}
+                Error = $null
+            }
+            
+            try {
+                # Get installed software (faster than Win32_Product)
+                if ($Options.CheckSoftware) {
+                    $result.Data.Software = @()
                     
-                    $result = @{
-                        Hostname = $ComputerName
-                        Success = $true
-                        Data = @{}
-                        Error = $null
-                    }
-                    
+                    # Try registry approach first (much faster)
                     try {
-                        # Get installed software (faster than Win32_Product)
-                        if ($Options.CheckSoftware) {
-                            $result.Data.Software = @()
-                            
-                            # Try registry approach first (much faster)
-                            try {
-                                $reg = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey('LocalMachine', $ComputerName)
-                                $keys = @(
-                                    "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
-                                    "SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
-                                )
-                                
-                                $software = @()
-                                foreach ($key in $keys) {
-                                    $regKey = $reg.OpenSubKey($key)
-                                    if ($regKey) {
-                                        foreach ($subKeyName in $regKey.GetSubKeyNames()) {
-                                            $subKey = $regKey.OpenSubKey($subKeyName)
-                                            $displayName = $subKey.GetValue("DisplayName")
-                                            if ($displayName) {
-                                                $software += $displayName
-                                            }
-                                        }
+                        $reg = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey('LocalMachine', $ComputerName)
+                        $keys = @(
+                            "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+                            "SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
+                        )
+                        
+                        $software = @()
+                        foreach ($key in $keys) {
+                            $regKey = $reg.OpenSubKey($key)
+                            if ($regKey) {
+                                foreach ($subKeyName in $regKey.GetSubKeyNames()) {
+                                    $subKey = $regKey.OpenSubKey($subKeyName)
+                                    $displayName = $subKey.GetValue("DisplayName")
+                                    if ($displayName) {
+                                        $software += $displayName
                                     }
                                 }
-                                $result.Data.Software = $software | Select-Object -Unique
-                            }
-                            catch {
-                                # Fallback to WMI if registry fails
-                                $products = Get-WmiObject -ComputerName $ComputerName -Class Win32_Product -ErrorAction Stop
-                                $result.Data.Software = $products | Select-Object -ExpandProperty Name
                             }
                         }
+                        $result.Data.Software = $software | Select-Object -Unique
                     }
                     catch {
-                        $result.Success = $false
-                        $result.Error = $_.Exception.Message
+                        # Fallback to WMI if registry fails
+                        $products = Get-WmiObject -ComputerName $ComputerName -Class Win32_Product -ErrorAction Stop
+                        $result.Data.Software = $products | Select-Object -ExpandProperty Name
                     }
-                    
-                    return $result
                 }
-                
-                # Call the function
-                Get-RemoteSystemInfo -ComputerName $ComputerName -Options $Options
             }
+            catch {
+                $result.Success = $false
+                $result.Error = $_.Exception.Message
+            }
+            
+            return $result
         }
         
-        $result = & $remoteInfoScript -ComputerName $hostname -Options @{CheckSoftware = $true}
+        $result = & $getSystemInfoScript -ComputerName $hostname -Options @{CheckSoftware = $true}
         
         if ($result.Success -and $result.Data.Software) {
             $uniqueApps = $result.Data.Software | Where-Object {
@@ -1065,6 +1013,7 @@ function Invoke-EnhancedDiscovery {
     $options = @{
         CheckSoftware = $script:Config.SystemInfo.CheckSunquest
         CheckPrinters = $script:Config.SystemInfo.CheckPrinters
+        CheckTracert = $script:Config.SystemInfo.CheckTracert
         CheckNetwork = $true
         CheckStorage = $true
     }
@@ -1123,6 +1072,39 @@ function Invoke-EnhancedDiscovery {
                     foreach ($app in $sunquestApps) {
                         $null = $output.AppendLine("  - $app")
                     }
+                }
+            }
+            
+            # Tracert Information
+            if ($options.CheckTracert) {
+                try {
+                    Write-ScriptLog "Tracing route to $($result.Hostname)..." -Type "Info"
+                    $traceOutput = & tracert -h 20 -w 10000 $result.Hostname 2>&1
+                    
+                    if ($LASTEXITCODE -eq 0 -and $traceOutput) {
+                        # Filter out empty lines and header lines
+                        $trace = $traceOutput | Where-Object { 
+                            $_.Trim() -ne '' -and 
+                            $_ -notmatch '^Tracing route to' -and 
+                            $_ -notmatch '^over a maximum of' -and
+                            $_ -notmatch '^Trace complete'
+                        } | Select-Object -First 20
+                        
+                        if ($trace) {
+                            $null = $output.AppendLine("`nTracert Route:")
+                            foreach ($line in $trace) {
+                                $null = $output.AppendLine("  $line")
+                            }
+                        } else {
+                            $null = $output.AppendLine("`nTracert Route: No route data available")
+                        }
+                    } else {
+                        $null = $output.AppendLine("`nTracert Route: Trace failed (Exit code: $LASTEXITCODE)")
+                    }
+                }
+                catch {
+                    $null = $output.AppendLine("`nTracert Route: Trace failed: $($_.Exception.Message)")
+                    Write-ScriptLog "Traceroute failed for $($result.Hostname): $($_.Exception.Message)" -Type "Warning"
                 }
             }
         }
