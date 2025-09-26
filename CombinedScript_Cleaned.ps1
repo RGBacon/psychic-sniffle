@@ -1241,8 +1241,8 @@ function Invoke-NetworkAnalysis {
         if ($subnetMap.Count -gt 0) {
             foreach ($subnet in $subnetMap.Keys | Sort-Object) {
                 $null = $output.AppendLine("`nSubnet $subnet.*: $($subnetMap[$subnet].Count) hosts")
-                foreach ($host in $subnetMap[$subnet] | Sort-Object) {
-                    $null = $output.AppendLine("  - $host")
+                foreach ($hostname in $subnetMap[$subnet] | Sort-Object) {
+                    $null = $output.AppendLine("  - $hostname")
                 }
             }
         } else {
