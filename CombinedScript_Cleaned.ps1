@@ -86,14 +86,22 @@ function Initialize-OutputFile {
     )
     
     try {
-        Clear-Content -Path $FilePath -ErrorAction Stop
+        # Ensure the directory exists
+        $directory = Split-Path -Path $FilePath -Parent
+        if ($directory -and -not (Test-Path $directory)) {
+            New-Item -ItemType Directory -Path $directory -Force | Out-Null
+        }
+        
+        # Create or overwrite the file with header
         $header = @(
             $Title,
             "Generated on $(Get-Date)",
             ("=" * 50),
             ""
         ) -join "`n"
-        Set-Content -Path $FilePath -Value $header
+        
+        # Use Set-Content which will create the file if it doesn't exist
+        Set-Content -Path $FilePath -Value $header -Force -ErrorAction Stop
         return $true
     }
     catch {
