@@ -374,6 +374,34 @@ function Get-RemoteSystemInfoScriptBlock {
                         }
                     }
                 }
+                
+                # Get traceroute info (parallel execution)
+                if ($Options.CheckTracert) {
+                    try {
+                        $traceOutput = & tracert -h 20 -w 10000 $ComputerName 2>&1
+                        
+                        if ($LASTEXITCODE -eq 0 -and $traceOutput) {
+                            # Filter out empty lines and header lines
+                            $trace = $traceOutput | Where-Object { 
+                                $_.Trim() -ne '' -and 
+                                $_ -notmatch '^Tracing route to' -and 
+                                $_ -notmatch '^over a maximum of' -and
+                                $_ -notmatch '^Trace complete'
+                            } | Select-Object -First 20
+                            
+                            if ($trace) {
+                                $result.Data.TraceRoute = $trace -join "`n"
+                            } else {
+                                $result.Data.TraceRoute = "No route data available"
+                            }
+                        } else {
+                            $result.Data.TraceRoute = "Trace failed (Exit code: $LASTEXITCODE)"
+                        }
+                    }
+                    catch {
+                        $result.Data.TraceRoute = "Trace failed: $($_.Exception.Message)"
+                    }
+                }
             }
             catch {
                 $result.Success = $false
@@ -753,36 +781,10 @@ function Start-SingleHostCheck {
             }
         }
         
-        # Tracert Information
-        if ($options.CheckTracert) {
-            try {
-                Write-Host "`nTracert Route:" -ForegroundColor $script:Config.Colors.Info
-                $traceOutput = & tracert -h 20 -w 10000 $hostname 2>&1
-                
-                if ($LASTEXITCODE -eq 0 -and $traceOutput) {
-                    # Filter out empty lines and header lines
-                    $trace = $traceOutput | Where-Object { 
-                        $_.Trim() -ne '' -and 
-                        $_ -notmatch '^Tracing route to' -and 
-                        $_ -notmatch '^over a maximum of' -and
-                        $_ -notmatch '^Trace complete'
-                    } | Select-Object -First 20
-                    
-                    if ($trace) {
-                        foreach ($line in $trace) {
-                            Write-Host "  $line"
-                        }
-                    } else {
-                        Write-Host "  No route data available"
-                    }
-                } else {
-                    Write-Host "  Trace failed (Exit code: $LASTEXITCODE)"
-                }
-            }
-            catch {
-                Write-Host "  Trace failed: $($_.Exception.Message)"
-                Write-ScriptLog "Traceroute failed for ${hostname}: $($_.Exception.Message)" -Type "Warning"
-            }
+        # Tracert Information (now included in parallel results)
+        if ($options.CheckTracert -and $result.Data.TraceRoute) {
+            Write-Host "`nTracert Route:" -ForegroundColor $script:Config.Colors.Info
+            Write-Host $result.Data.TraceRoute
         }
     }
     else {
@@ -1075,37 +1077,10 @@ function Invoke-EnhancedDiscovery {
                 }
             }
             
-            # Tracert Information
-            if ($options.CheckTracert) {
-                try {
-                    Write-ScriptLog "Tracing route to $($result.Hostname)..." -Type "Info"
-                    $traceOutput = & tracert -h 20 -w 10000 $result.Hostname 2>&1
-                    
-                    if ($LASTEXITCODE -eq 0 -and $traceOutput) {
-                        # Filter out empty lines and header lines
-                        $trace = $traceOutput | Where-Object { 
-                            $_.Trim() -ne '' -and 
-                            $_ -notmatch '^Tracing route to' -and 
-                            $_ -notmatch '^over a maximum of' -and
-                            $_ -notmatch '^Trace complete'
-                        } | Select-Object -First 20
-                        
-                        if ($trace) {
-                            $null = $output.AppendLine("`nTracert Route:")
-                            foreach ($line in $trace) {
-                                $null = $output.AppendLine("  $line")
-                            }
-                        } else {
-                            $null = $output.AppendLine("`nTracert Route: No route data available")
-                        }
-                    } else {
-                        $null = $output.AppendLine("`nTracert Route: Trace failed (Exit code: $LASTEXITCODE)")
-                    }
-                }
-                catch {
-                    $null = $output.AppendLine("`nTracert Route: Trace failed: $($_.Exception.Message)")
-                    Write-ScriptLog "Traceroute failed for $($result.Hostname): $($_.Exception.Message)" -Type "Warning"
-                }
+            # Tracert Information (now included in parallel results)
+            if ($options.CheckTracert -and $result.Data.TraceRoute) {
+                $null = $output.AppendLine("`nTracert Route:")
+                $null = $output.AppendLine($result.Data.TraceRoute)
             }
         }
         else {
@@ -1145,42 +1120,11 @@ function Invoke-NetworkAnalysis {
         return
     }
     
-    # Get the base scriptblock with network options
+    # Get the base scriptblock with network and tracert options
     $scriptBlock = Get-RemoteSystemInfoScriptBlock
-    $results = Start-ParallelJobs -InputObjects $hosts -ScriptBlock $scriptBlock -ArgumentList @{CheckNetwork = $true} -Activity "Network Analysis"
+    $results = Start-ParallelJobs -InputObjects $hosts -ScriptBlock $scriptBlock -ArgumentList @{CheckNetwork = $true; CheckTracert = $true} -Activity "Network Analysis"
     
-    # Add traceroute info to results
-    Write-ScriptLog "Adding traceroute information..." -Type "Info"
-    foreach ($result in $results) {
-        if ($result.Success) {
-            try {
-                Write-ScriptLog "Tracing route to $($result.Hostname)..." -Type "Info"
-                $traceOutput = & tracert -h 20 -w 10000 $result.Hostname 2>&1
-                
-                if ($LASTEXITCODE -eq 0 -and $traceOutput) {
-                    # Filter out empty lines and header lines
-                    $trace = $traceOutput | Where-Object { 
-                        $_.Trim() -ne '' -and 
-                        $_ -notmatch '^Tracing route to' -and 
-                        $_ -notmatch '^over a maximum of' -and
-                        $_ -notmatch '^Trace complete'
-                    } | Select-Object -First 20
-                    
-                    if ($trace) {
-                        $result.Data.TraceRoute = $trace -join "`n"
-                    } else {
-                        $result.Data.TraceRoute = "No route data available"
-                    }
-                } else {
-                    $result.Data.TraceRoute = "Trace failed (Exit code: $LASTEXITCODE)"
-                }
-            }
-            catch {
-                $result.Data.TraceRoute = "Trace failed: $($_.Exception.Message)"
-                Write-ScriptLog "Traceroute failed for $($result.Hostname): $($_.Exception.Message)" -Type "Warning"
-            }
-        }
-    }
+    # Traceroute info is now included in parallel results
     
     # Format results
     $output = New-Object System.Text.StringBuilder
