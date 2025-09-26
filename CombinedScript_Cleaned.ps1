@@ -448,20 +448,19 @@ $script:MenuDefinitions = @{
     Main = @{
         Title = "Jeremy's All In One Utility"
         Options = @(
-            @{Text = "Retrieve System Information"; Action = { Show-Menu -MenuName "SystemInfo" }}
+            @{Text = "Enhanced System Discovery"; Action = { Show-Menu -MenuName "SystemInfo" }}
             @{Text = "Check Sunquest Lab Applications"; Action = { Invoke-SunquestCheck }}
             @{Text = "Send Messages to Hosts"; Action = { Show-Menu -MenuName "Messages" }}
             @{Text = "Check Unique Applications"; Action = { Invoke-CheckUniqueApps }}
-            @{Text = "Enhanced System Discovery"; Action = { Invoke-EnhancedDiscovery }}
             @{Text = "Network Topology Analysis"; Action = { Invoke-NetworkAnalysis }}
             @{Text = "Settings"; Action = { Show-Menu -MenuName "Settings" }}
             @{Text = "Exit"; Action = { exit }}
         )
     }
     SystemInfo = @{
-        Title = "System Information Retrieval"
+        Title = "Enhanced System Discovery"
         Options = @(
-            @{Text = "Start Batch Scan"; Action = { Start-SystemInfoBatch }}
+            @{Text = "Start Enhanced Discovery"; Action = { Invoke-EnhancedDiscovery }}
             @{Text = "Check Single Host"; Action = { Start-SingleHostCheck }}
             @{Text = "Configure Options"; Action = { Configure-SystemInfoOptions }}
             @{Text = "Return to Main Menu"; Action = { Show-Menu -MenuName "Main" }}
@@ -1064,8 +1063,8 @@ function Invoke-EnhancedDiscovery {
     }
     
     $options = @{
-        CheckSoftware = $false
-        CheckPrinters = $true
+        CheckSoftware = $script:Config.SystemInfo.CheckSunquest
+        CheckPrinters = $script:Config.SystemInfo.CheckPrinters
         CheckNetwork = $true
         CheckStorage = $true
     }
@@ -1105,6 +1104,25 @@ function Invoke-EnhancedDiscovery {
                     $null = $output.AppendLine("  $($adapter.Description)")
                     $null = $output.AppendLine("    IP: $($adapter.IPAddress)")
                     $null = $output.AppendLine("    Gateway: $($adapter.DefaultGateway)")
+                }
+            }
+            
+            # Printers
+            if ($options.CheckPrinters -and $result.Data.Printers) {
+                $null = $output.AppendLine("`nPrinters:")
+                foreach ($printer in $result.Data.Printers) {
+                    $null = $output.AppendLine("  - $($printer.Name)")
+                }
+            }
+            
+            # Sunquest Applications
+            if ($options.CheckSoftware -and $result.Data.Software) {
+                $sunquestApps = $result.Data.Software | Where-Object { $_ -like "Sunquest Lab*" }
+                if ($sunquestApps) {
+                    $null = $output.AppendLine("`nSunquest Applications:")
+                    foreach ($app in $sunquestApps) {
+                        $null = $output.AppendLine("  - $app")
+                    }
                 }
             }
         }
