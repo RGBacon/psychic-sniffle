@@ -147,34 +147,11 @@ function Invoke-Pause {
 #endregion
 
 #region WMI Query Functions (Consolidated)
-function Invoke-WMIQuery {
-    param(
-        [Parameter(Mandatory)][string]$ComputerName,
-        [Parameter(Mandatory)][string]$Query,
-        [string]$Namespace = 'root\cimv2',
-        [int]$Timeout = $script:Config.Timeout
-    )
-    
-    $job = Start-Job -ScriptBlock {
-        param($Computer, $Query, $NS)
-        Get-WmiObject -ComputerName $Computer -Namespace $NS -Query $Query -ErrorAction Stop
-    } -ArgumentList $ComputerName, $Query, $Namespace
-    
-    if (Wait-Job -Job $job -Timeout $Timeout) {
-        $result = Receive-Job -Job $job
-        Remove-Job -Job $job -Force
-        return $result
-    }
-    else {
-        Remove-Job -Job $job -Force
-        throw "WMI query timed out after $Timeout seconds"
-    }
-}
-
 function Get-RemoteSystemInfo {
     param(
         [Parameter(Mandatory)][string]$ComputerName,
-        [hashtable]$Options = @{}
+        [hashtable]$Options = @{},
+        [int]$Timeout = 30
     )
     
     $result = @{
@@ -186,7 +163,7 @@ function Get-RemoteSystemInfo {
     
     try {
         # Get OS info
-        $os = Invoke-WMIQuery -ComputerName $ComputerName -Query "SELECT * FROM Win32_OperatingSystem"
+        $os = Get-WmiObject -ComputerName $ComputerName -Class Win32_OperatingSystem -ErrorAction Stop
         $result.Data.OS = @{
             Name = $os.Caption
             Version = $os.Version
@@ -196,8 +173,8 @@ function Get-RemoteSystemInfo {
         }
         
         # Get hardware info
-        $cs = Invoke-WMIQuery -ComputerName $ComputerName -Query "SELECT * FROM Win32_ComputerSystem"
-        $cpu = Invoke-WMIQuery -ComputerName $ComputerName -Query "SELECT * FROM Win32_Processor" | Select-Object -First 1
+        $cs = Get-WmiObject -ComputerName $ComputerName -Class Win32_ComputerSystem -ErrorAction Stop
+        $cpu = Get-WmiObject -ComputerName $ComputerName -Class Win32_Processor -ErrorAction Stop | Select-Object -First 1
         
         $result.Data.Hardware = @{
             Manufacturer = $cs.Manufacturer
@@ -214,49 +191,44 @@ function Get-RemoteSystemInfo {
             $result.Data.Software = @()
             
             # Try registry approach first (much faster)
-            $scriptBlock = {
-                param($Computer)
-                $software = @()
+            try {
+                $reg = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey('LocalMachine', $ComputerName)
                 $keys = @(
                     "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
                     "SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
                 )
                 
+                $software = @()
                 foreach ($key in $keys) {
-                    try {
-                        $reg = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey('LocalMachine', $Computer)
-                        $regKey = $reg.OpenSubKey($key)
-                        if ($regKey) {
-                            foreach ($subKeyName in $regKey.GetSubKeyNames()) {
-                                $subKey = $regKey.OpenSubKey($subKeyName)
-                                $displayName = $subKey.GetValue("DisplayName")
-                                if ($displayName) {
-                                    $software += $displayName
-                                }
+                    $regKey = $reg.OpenSubKey($key)
+                    if ($regKey) {
+                        foreach ($subKeyName in $regKey.GetSubKeyNames()) {
+                            $subKey = $regKey.OpenSubKey($subKeyName)
+                            $displayName = $subKey.GetValue("DisplayName")
+                            if ($displayName) {
+                                $software += $displayName
                             }
                         }
                     }
-                    catch { }
                 }
-                return $software | Select-Object -Unique
+                $result.Data.Software = $software | Select-Object -Unique
             }
-            
-            $job = Start-Job -ScriptBlock $scriptBlock -ArgumentList $ComputerName
-            if (Wait-Job -Job $job -Timeout ($script:Config.Timeout / 2)) {
-                $result.Data.Software = Receive-Job -Job $job
+            catch {
+                # Fallback to WMI if registry fails
+                $products = Get-WmiObject -ComputerName $ComputerName -Class Win32_Product -ErrorAction Stop
+                $result.Data.Software = $products | Select-Object -ExpandProperty Name
             }
-            Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
         }
         
         # Get printers
         if ($Options.CheckPrinters) {
-            $printers = Invoke-WMIQuery -ComputerName $ComputerName -Query "SELECT * FROM Win32_Printer"
+            $printers = Get-WmiObject -ComputerName $ComputerName -Class Win32_Printer -ErrorAction Stop
             $result.Data.Printers = $printers | Select-Object Name, DriverName, PortName, Shared, ShareName
         }
         
         # Get network info
         if ($Options.CheckNetwork) {
-            $adapters = Invoke-WMIQuery -ComputerName $ComputerName -Query "SELECT * FROM Win32_NetworkAdapterConfiguration WHERE IPEnabled = True"
+            $adapters = Get-WmiObject -ComputerName $ComputerName -Class Win32_NetworkAdapterConfiguration -Filter "IPEnabled = True" -ErrorAction Stop
             $result.Data.Network = $adapters | ForEach-Object {
                 @{
                     Description = $_.Description
@@ -271,7 +243,7 @@ function Get-RemoteSystemInfo {
         
         # Get storage info
         if ($Options.CheckStorage) {
-            $disks = Invoke-WMIQuery -ComputerName $ComputerName -Query "SELECT * FROM Win32_LogicalDisk WHERE DriveType = 3"
+            $disks = Get-WmiObject -ComputerName $ComputerName -Class Win32_LogicalDisk -Filter "DriveType = 3" -ErrorAction Stop
             $result.Data.Storage = $disks | ForEach-Object {
                 @{
                     Drive = $_.DeviceID
@@ -293,6 +265,133 @@ function Get-RemoteSystemInfo {
 #endregion
 
 #region Job Management Functions
+function Get-RemoteSystemInfoScriptBlock {
+    # Returns a scriptblock that includes the Get-RemoteSystemInfo function
+    return {
+        param($ComputerName, $Options)
+        
+        # Function definition included in job
+        function Get-RemoteSystemInfo {
+            param(
+                [Parameter(Mandatory)][string]$ComputerName,
+                [hashtable]$Options = @{},
+                [int]$Timeout = 30
+            )
+            
+            $result = @{
+                Hostname = $ComputerName
+                Success = $true
+                Data = @{}
+                Error = $null
+            }
+            
+            try {
+                # Get OS info
+                $os = Get-WmiObject -ComputerName $ComputerName -Class Win32_OperatingSystem -ErrorAction Stop
+                $result.Data.OS = @{
+                    Name = $os.Caption
+                    Version = $os.Version
+                    BuildNumber = $os.BuildNumber
+                    TotalMemoryGB = [math]::Round($os.TotalVisibleMemorySize / 1MB, 2)
+                    LastBoot = [System.Management.ManagementDateTimeConverter]::ToDateTime($os.LastBootUpTime)
+                }
+                
+                # Get hardware info
+                $cs = Get-WmiObject -ComputerName $ComputerName -Class Win32_ComputerSystem -ErrorAction Stop
+                $cpu = Get-WmiObject -ComputerName $ComputerName -Class Win32_Processor -ErrorAction Stop | Select-Object -First 1
+                
+                $result.Data.Hardware = @{
+                    Manufacturer = $cs.Manufacturer
+                    Model = $cs.Model
+                    Domain = $cs.Domain
+                    TotalPhysicalMemory = [math]::Round($cs.TotalPhysicalMemory / 1GB, 2)
+                    Processor = $cpu.Name
+                    Cores = $cpu.NumberOfCores
+                    LogicalProcessors = $cpu.NumberOfLogicalProcessors
+                }
+                
+                # Get installed software (faster than Win32_Product)
+                if ($Options.CheckSoftware) {
+                    $result.Data.Software = @()
+                    
+                    # Try registry approach first (much faster)
+                    try {
+                        $reg = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey('LocalMachine', $ComputerName)
+                        $keys = @(
+                            "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+                            "SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
+                        )
+                        
+                        $software = @()
+                        foreach ($key in $keys) {
+                            $regKey = $reg.OpenSubKey($key)
+                            if ($regKey) {
+                                foreach ($subKeyName in $regKey.GetSubKeyNames()) {
+                                    $subKey = $regKey.OpenSubKey($subKeyName)
+                                    $displayName = $subKey.GetValue("DisplayName")
+                                    if ($displayName) {
+                                        $software += $displayName
+                                    }
+                                }
+                            }
+                        }
+                        $result.Data.Software = $software | Select-Object -Unique
+                    }
+                    catch {
+                        # Fallback to WMI if registry fails
+                        $products = Get-WmiObject -ComputerName $ComputerName -Class Win32_Product -ErrorAction Stop
+                        $result.Data.Software = $products | Select-Object -ExpandProperty Name
+                    }
+                }
+                
+                # Get printers
+                if ($Options.CheckPrinters) {
+                    $printers = Get-WmiObject -ComputerName $ComputerName -Class Win32_Printer -ErrorAction Stop
+                    $result.Data.Printers = $printers | Select-Object Name, DriverName, PortName, Shared, ShareName
+                }
+                
+                # Get network info
+                if ($Options.CheckNetwork) {
+                    $adapters = Get-WmiObject -ComputerName $ComputerName -Class Win32_NetworkAdapterConfiguration -Filter "IPEnabled = True" -ErrorAction Stop
+                    $result.Data.Network = $adapters | ForEach-Object {
+                        @{
+                            Description = $_.Description
+                            IPAddress = $_.IPAddress -join ', '
+                            SubnetMask = $_.IPSubnet -join ', '
+                            DefaultGateway = $_.DefaultIPGateway -join ', '
+                            DNSServers = $_.DNSServerSearchOrder -join ', '
+                            MACAddress = $_.MACAddress
+                        }
+                    }
+                }
+                
+                # Get storage info
+                if ($Options.CheckStorage) {
+                    $disks = Get-WmiObject -ComputerName $ComputerName -Class Win32_LogicalDisk -Filter "DriveType = 3" -ErrorAction Stop
+                    $result.Data.Storage = $disks | ForEach-Object {
+                        @{
+                            Drive = $_.DeviceID
+                            SizeGB = [math]::Round($_.Size / 1GB, 2)
+                            FreeGB = [math]::Round($_.FreeSpace / 1GB, 2)
+                            FileSystem = $_.FileSystem
+                            VolumeName = $_.VolumeName
+                        }
+                    }
+                }
+            }
+            catch {
+                $result.Success = $false
+                $result.Error = $_.Exception.Message
+            }
+            
+            return $result
+        }
+        
+        # Call the function
+        Get-RemoteSystemInfo -ComputerName $ComputerName -Options $Options
+    }
+}
+
 function Start-ParallelJobs {
     param(
         [Parameter(Mandatory)][array]$InputObjects,
@@ -640,13 +739,11 @@ function Start-SystemInfoBatch {
         CheckPrinters = $script:Config.SystemInfo.CheckPrinters
     }
     
-    $scriptBlock = {
-        param($hostname, $opts)
-        Get-RemoteSystemInfo -ComputerName $hostname -Options $opts
-    }
-    
     Write-ScriptLog "Retrieving system information from $($hosts.Count) hosts..." -Type "Info"
-    $results = Start-ParallelJobs -InputObjects $hosts -ScriptBlock ${function:Get-RemoteSystemInfo} -ArgumentList $options -Activity "Retrieving System Info"
+    
+    # Use the common scriptblock
+    $scriptBlock = Get-RemoteSystemInfoScriptBlock
+    $results = Start-ParallelJobs -InputObjects $hosts -ScriptBlock $scriptBlock -ArgumentList $options -Activity "Retrieving System Info"
     
     # Process and format results
     $output = New-Object System.Text.StringBuilder
@@ -814,7 +911,75 @@ function Invoke-CheckUniqueApps {
     $scriptBlock = {
         param($hostname, $baseline, $excludePatterns)
         
-        $result = Get-RemoteSystemInfo -ComputerName $hostname -Options @{CheckSoftware = $true}
+        # Include Get-RemoteSystemInfo function definition
+        $remoteInfoScript = & {
+            {
+                param($ComputerName, $Options)
+                
+                # Function definition included in job
+                function Get-RemoteSystemInfo {
+                    param(
+                        [Parameter(Mandatory)][string]$ComputerName,
+                        [hashtable]$Options = @{},
+                        [int]$Timeout = 30
+                    )
+                    
+                    $result = @{
+                        Hostname = $ComputerName
+                        Success = $true
+                        Data = @{}
+                        Error = $null
+                    }
+                    
+                    try {
+                        # Get installed software (faster than Win32_Product)
+                        if ($Options.CheckSoftware) {
+                            $result.Data.Software = @()
+                            
+                            # Try registry approach first (much faster)
+                            try {
+                                $reg = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey('LocalMachine', $ComputerName)
+                                $keys = @(
+                                    "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+                                    "SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
+                                )
+                                
+                                $software = @()
+                                foreach ($key in $keys) {
+                                    $regKey = $reg.OpenSubKey($key)
+                                    if ($regKey) {
+                                        foreach ($subKeyName in $regKey.GetSubKeyNames()) {
+                                            $subKey = $regKey.OpenSubKey($subKeyName)
+                                            $displayName = $subKey.GetValue("DisplayName")
+                                            if ($displayName) {
+                                                $software += $displayName
+                                            }
+                                        }
+                                    }
+                                }
+                                $result.Data.Software = $software | Select-Object -Unique
+                            }
+                            catch {
+                                # Fallback to WMI if registry fails
+                                $products = Get-WmiObject -ComputerName $ComputerName -Class Win32_Product -ErrorAction Stop
+                                $result.Data.Software = $products | Select-Object -ExpandProperty Name
+                            }
+                        }
+                    }
+                    catch {
+                        $result.Success = $false
+                        $result.Error = $_.Exception.Message
+                    }
+                    
+                    return $result
+                }
+                
+                # Call the function
+                Get-RemoteSystemInfo -ComputerName $ComputerName -Options $Options
+            }
+        }
+        
+        $result = & $remoteInfoScript -ComputerName $hostname -Options @{CheckSoftware = $true}
         
         if ($result.Success -and $result.Data.Software) {
             $uniqueApps = $result.Data.Software | Where-Object {
@@ -906,7 +1071,8 @@ function Invoke-EnhancedDiscovery {
     }
     
     Write-ScriptLog "Starting enhanced discovery on $($hosts.Count) hosts..." -Type "Info"
-    $results = Start-ParallelJobs -InputObjects $hosts -ScriptBlock ${function:Get-RemoteSystemInfo} -ArgumentList $options -Activity "Enhanced Discovery"
+    $scriptBlock = Get-RemoteSystemInfoScriptBlock
+    $results = Start-ParallelJobs -InputObjects $hosts -ScriptBlock $scriptBlock -ArgumentList $options -Activity "Enhanced Discovery"
     
     # Format results
     $output = New-Object System.Text.StringBuilder
@@ -979,27 +1145,23 @@ function Invoke-NetworkAnalysis {
         return
     }
     
-    $scriptBlock = {
-        param($hostname)
-        
-        $result = Get-RemoteSystemInfo -ComputerName $hostname -Options @{CheckNetwork = $true}
-        
+    # Get the base scriptblock with network options
+    $scriptBlock = Get-RemoteSystemInfoScriptBlock
+    $results = Start-ParallelJobs -InputObjects $hosts -ScriptBlock $scriptBlock -ArgumentList @{CheckNetwork = $true} -Activity "Network Analysis"
+    
+    # Add traceroute info to results
+    Write-ScriptLog "Adding traceroute information..." -Type "Info"
+    foreach ($result in $results) {
         if ($result.Success) {
-            # Add traceroute info
             try {
-                $trace = & tracert -h 5 -w 1000 $hostname 2>$null | Select-Object -Skip 4 -First 6
+                $trace = & tracert -h 5 -w 1000 $result.Hostname 2>$null | Select-Object -Skip 4 -First 6
                 $result.Data.TraceRoute = $trace -join "`n"
             }
             catch {
                 $result.Data.TraceRoute = "Trace failed"
             }
         }
-        
-        return $result
     }
-    
-    Write-ScriptLog "Analyzing network topology for $($hosts.Count) hosts..." -Type "Info"
-    $results = Start-ParallelJobs -InputObjects $hosts -ScriptBlock $scriptBlock -Activity "Network Analysis"
     
     # Format results
     $output = New-Object System.Text.StringBuilder
