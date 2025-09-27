@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Data Viewer</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 2em;
+        }
+        .filters {
+            padding: 20px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #dee2e6;
+        }
+        .filter-group {
+            display: inline-block;
+            margin-right: 20px;
+            margin-bottom: 10px;
+        }
+        .filter-group label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #495057;
+        }
+        .filter-group input, .filter-group select {
+            padding: 8px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .filter-group input:focus, .filter-group select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.25);
+        }
+        .btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-right: 10px;
+        }
+        .btn:hover {
+            background: #5a6fd8;
+        }
+        .btn-secondary {
+            background: #6c757d;
+        }
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+        .stats {
+            padding: 20px;
+            background: #e9ecef;
+            border-bottom: 1px solid #dee2e6;
+        }
+        .stat-item {
+            display: inline-block;
+            margin-right: 30px;
+            text-align: center;
+        }
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+            color: #667eea;
+        }
+        .stat-label {
+            color: #6c757d;
+            font-size: 0.9em;
+        }
+        .table-container {
+            overflow-x: auto;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        th, td {
+            padding: 12px 8px;
+            text-align: left;
+            border-bottom: 1px solid #dee2e6;
+        }
+        th {
+            background: #f8f9fa;
+            font-weight: bold;
+            color: #495057;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        tr:hover {
+            opacity: 0.8;
+        }
+        .status-success {
+            color: #28a745;
+            font-weight: bold;
+        }
+        .status-error {
+            color: #dc3545;
+            font-weight: bold;
+        }
+        .low-ram {
+            background-color: #ffeaa7;
+        }
+        .win11-ready {
+            background-color: #d4edda;
+        }
+        .win10-ready {
+            background-color: #fff3cd;
+        }
+        .needs-upgrade {
+            background-color: #f8d7da;
+        }
+        .export-section {
+            padding: 20px;
+            background: #f8f9fa;
+            border-top: 1px solid #dee2e6;
+            text-align: center;
+        }
+        .error-message {
+            padding: 20px;
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            border-radius: 4px;
+            margin: 20px;
+            text-align: center;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>System Data Viewer</h1>
+            <p>Real-time system information with filtering and export capabilities</p>
+        </div>
+        
+        <div class="filters">
+            <div class="filter-group">
+                <label for="hostnameFilter">Hostname:</label>
+                <input type="text" id="hostnameFilter" placeholder="Filter by hostname...">
+            </div>
+            <div class="filter-group">
+                <label for="osFilter">Operating System:</label>
+                <select id="osFilter">
+                    <option value="">All OS</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="statusFilter">Status:</label>
+                <select id="statusFilter">
+                    <option value="">All Status</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="sunquestFilter">Sunquest Apps:</label>
+                <select id="sunquestFilter">
+                    <option value="">All</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="ipSubnetFilter">IP Subnet:</label>
+                <input type="text" id="ipSubnetFilter" placeholder="e.g., 10.24.*.* or 192.168.1.*">
+            </div>
+            <div class="filter-group">
+                <label for="subnetGroupFilter">Group by Subnet:</label>
+                <select id="subnetGroupFilter">
+                    <option value="">No Grouping</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="maxMemory">Max Memory (GB):</label>
+                <input type="number" id="maxMemory" placeholder="Max GB" min="0">
+            </div>
+            <div style="margin-top: 15px;">
+                <button class="btn" onclick="applyFilters()">Apply Filters</button>
+                <button class="btn btn-secondary" onclick="clearFilters()">Clear Filters</button>
+                <button class="btn btn-secondary" onclick="loadCSVData()">Load CSV File</button>
+            </div>
+        </div>
+        
+        <div class="stats">
+            <div class="stat-item">
+                <div class="stat-number" id="totalSystems">0</div>
+                <div class="stat-label">Total Systems</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number" id="successfulSystems">0</div>
+                <div class="stat-label">Successful</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number" id="errorSystems">0</div>
+                <div class="stat-label">Errors</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number" id="lowRamSystems">0</div>
+                <div class="stat-label">Low RAM (< 16GB)</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number" id="win11Done">0</div>
+                <div class="stat-label">Win11 Done</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number" id="pcsNeedWork">0</div>
+                <div class="stat-label">PCs Need Work</div>
+            </div>
+        </div>
+        
+        <div class="table-container">
+            <table id="dataTable">
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Hostname</th>
+                        <th>OS</th>
+                        <th>Manufacturer</th>
+                        <th>Model</th>
+                        <th>Memory (GB)</th>
+                        <th>Processor</th>
+                        <th>C: Free %</th>
+                        <th>D: Free %</th>
+                        <th>Primary IP</th>
+                        <th>Subnet</th>
+                        <th>Sunquest Apps</th>
+                        <th>TraceRoute</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                    <tr>
+                        <td colspan="14" class="loading">Loading data...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        
+        <div class="export-section">
+            <button class="btn" onclick="exportToCSV()">Export Filtered Data to CSV</button>
+            <button class="btn btn-secondary" onclick="exportAllToCSV()">Export All Data to CSV</button>
+        </div>
+        
+        <div style="padding: 20px; background: #f8f9fa; border-top: 1px solid #dee2e6;">
+            <h3 style="margin-top: 0; color: #495057;">Windows 11 Requirements Check:</h3>
+            <div style="margin-bottom: 15px; padding: 10px; background: white; border-radius: 4px; border-left: 4px solid #667eea;">
+                <strong>Windows 11 Upgrade Requirements:</strong>
+                <ul style="margin: 5px 0; padding-left: 20px;">
+                    <li><strong>RAM:</strong> 16GB minimum</li>
+                    <li><strong>Storage:</strong> 64GB minimum</li>
+                    <li><strong>OS:</strong> Windows 10 or below</li>
+                </ul>
+            </div>
+            
+            <h3 style="margin-top: 0; color: #495057;">Color Legend:</h3>
+            <div style="display: flex; flex-wrap: wrap; gap: 15px;">
+                <div style="display: flex; align-items: center;">
+                    <div style="width: 20px; height: 20px; background-color: #d4edda; border: 1px solid #ccc; margin-right: 8px;"></div>
+                    <span>Windows 11 (Done)</span>
+                </div>
+                <div style="display: flex; align-items: center;">
+                    <div style="width: 20px; height: 20px; background-color: #fff3cd; border: 1px solid #ccc; margin-right: 8px;"></div>
+                    <span>Windows 10 or below with 16GB+ RAM</span>
+                </div>
+                <div style="display: flex; align-items: center;">
+                    <div style="width: 20px; height: 20px; background-color: #f8d7da; border: 1px solid #ccc; margin-right: 8px;"></div>
+                    <span>Needs Upgrade (Windows 10 or below with < 16GB RAM or unknown OS)</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let allData = [];
+        let filteredData = [];
+        
+        // Load CSV data
+        async function loadCSVData() {
+            try {
+                // Try to load the CSV file using a file input
+                const fileInput = document.createElement('input');
+                fileInput.type = 'file';
+                fileInput.accept = '.csv';
+                fileInput.style.display = 'none';
+                document.body.appendChild(fileInput);
+                
+                // Create a promise to handle the file selection
+                const filePromise = new Promise((resolve, reject) => {
+                    fileInput.onchange = (e) => {
+                        const file = e.target.files[0];
+                        if (file) {
+                            const reader = new FileReader();
+                            reader.onload = (e) => resolve(e.target.result);
+                            reader.onerror = () => reject(new Error('Failed to read file'));
+                            reader.readAsText(file);
+                        } else {
+                            reject(new Error('No file selected'));
+                        }
+                    };
+                    
+                    // Auto-trigger file selection
+                    fileInput.click();
+                });
+                
+                const csvText = await filePromise;
+                document.body.removeChild(fileInput);
+                
+                allData = parseCSV(csvText);
+                filteredData = [...allData];
+                updateDisplay();
+                populateFilters();
+            } catch (error) {
+                console.error('Error loading CSV data:', error);
+                document.getElementById('tableBody').innerHTML = `
+                    <tr>
+                        <td colspan="14" class="error-message">
+                            Error loading data: ${error.message}<br>
+                            Please select the system_data.csv file when prompted.
+                        </td>
+                    </tr>
+                `;
+            }
+        }
+        
+        
+        function parseCSV(csvText) {
+            const lines = csvText.split('\n');
+            const headers = lines[0].split(',').map(h => h.replace(/"/g, ''));
+            const data = [];
+            
+            for (let i = 1; i < lines.length; i++) {
+                if (lines[i].trim()) {
+                    const values = parseCSVLine(lines[i]);
+                    if (values.length === headers.length) {
+                        const row = {};
+                        headers.forEach((header, index) => {
+                            row[header] = values[index];
+                        });
+                        data.push(row);
+                    }
+                }
+            }
+            return data;
+        }
+        
+        function parseCSVLine(line) {
+            const result = [];
+            let current = '';
+            let inQuotes = false;
+            
+            for (let i = 0; i < line.length; i++) {
+                const char = line[i];
+                if (char === '"') {
+                    inQuotes = !inQuotes;
+                } else if (char === ',' && !inQuotes) {
+                    result.push(current.trim());
+                    current = '';
+                } else {
+                    current += char;
+                }
+            }
+            result.push(current.trim());
+            return result.map(val => val.replace(/^"|"$/g, ''));
+        }
+        
+        function populateFilters() {
+            const osSet = new Set();
+            const subnetSet = new Set();
+            const statusSet = new Set();
+            const sunquestSet = new Set();
+            
+            allData.forEach(row => {
+                // OS Filter
+                if (row.OS_Name) {
+                    const osName = row.OS_Name;
+                    if (osName.includes('Windows')) {
+                        // Extract version number from Windows OS names
+                        const match = osName.match(/Windows\s+(\d+)/);
+                        if (match) {
+                            osSet.add(`Windows ${match[1]}`);
+                        } else {
+                            // Handle Windows versions without numbers (like Windows Server, Windows XP, etc.)
+                            const windowsMatch = osName.match(/Windows\s+([A-Za-z]+)/);
+                            if (windowsMatch) {
+                                osSet.add(`Windows ${windowsMatch[1]}`);
+                            } else {
+                                osSet.add('Windows (Other)');
+                            }
+                        }
+                    } else {
+                        osSet.add(osName); // Non-Windows OS
+                    }
+                }
+                
+                // Status Filter
+                if (row.Status) {
+                    statusSet.add(row.Status);
+                }
+                
+                // Sunquest Filter
+                if (row.Sunquest_Apps) {
+                    sunquestSet.add('has');
+                } else {
+                    sunquestSet.add('none');
+                }
+                
+                // Subnet Filter
+                if (row.Subnet) subnetSet.add(row.Subnet);
+            });
+            
+            // Populate OS Filter
+            const osFilter = document.getElementById('osFilter');
+            osFilter.innerHTML = '<option value="">All OS</option>';
+            const sortedOS = Array.from(osSet).sort((a, b) => {
+                if (a.startsWith('Windows') && b.startsWith('Windows')) {
+                    const aNum = parseInt(a.replace('Windows ', '')) || 0;
+                    const bNum = parseInt(b.replace('Windows ', '')) || 0;
+                    if (aNum > 0 && bNum > 0) {
+                        return bNum - aNum;
+                    }
+                    return a.localeCompare(b);
+                }
+                if (a.startsWith('Windows')) return -1;
+                if (b.startsWith('Windows')) return 1;
+                return a.localeCompare(b);
+            });
+            sortedOS.forEach(os => {
+                const option = document.createElement('option');
+                option.value = os;
+                option.textContent = os;
+                osFilter.appendChild(option);
+            });
+            
+            // Populate Status Filter
+            const statusFilter = document.getElementById('statusFilter');
+            statusFilter.innerHTML = '<option value="">All Status</option>';
+            Array.from(statusSet).sort().forEach(status => {
+                const option = document.createElement('option');
+                option.value = status;
+                option.textContent = status;
+                statusFilter.appendChild(option);
+            });
+            
+            // Populate Sunquest Filter
+            const sunquestFilter = document.getElementById('sunquestFilter');
+            sunquestFilter.innerHTML = '<option value="">All</option>';
+            Array.from(sunquestSet).sort().forEach(sunquest => {
+                const option = document.createElement('option');
+                option.value = sunquest;
+                option.textContent = sunquest === 'has' ? 'Has Sunquest Apps' : 'No Sunquest Apps';
+                sunquestFilter.appendChild(option);
+            });
+            
+            // Populate Subnet Group Filter
+            const subnetGroupFilter = document.getElementById('subnetGroupFilter');
+            subnetGroupFilter.innerHTML = '<option value="">No Grouping</option>';
+            Array.from(subnetSet).sort().forEach(subnet => {
+                const option = document.createElement('option');
+                option.value = subnet;
+                option.textContent = subnet;
+                subnetGroupFilter.appendChild(option);
+            });
+        }
+        
+        function applyFilters() {
+            const hostnameFilter = document.getElementById('hostnameFilter').value.toLowerCase();
+            const osFilter = document.getElementById('osFilter').value;
+            const statusFilter = document.getElementById('statusFilter').value;
+            const maxMemory = parseFloat(document.getElementById('maxMemory').value) || 0;
+            const sunquestFilter = document.getElementById('sunquestFilter').value;
+            const ipSubnetFilter = document.getElementById('ipSubnetFilter').value;
+            
+            filteredData = allData.filter(row => {
+                // Basic filters
+                const hostnameMatch = !hostnameFilter || row.Hostname.toLowerCase().includes(hostnameFilter);
+                
+                // OS matching logic for dynamic Windows versions
+                let osMatch = !osFilter;
+                if (osFilter) {
+                    const osName = row.OS_Name || '';
+                    if (osFilter.startsWith('Windows ')) {
+                        const version = osFilter.replace('Windows ', '');
+                        osMatch = osName.includes(`Windows ${version}`);
+                    } else {
+                        osMatch = osName === osFilter; // For non-Windows OS
+                    }
+                }
+                
+                const statusMatch = !statusFilter || row.Status === statusFilter;
+                const maxMemoryMatch = !maxMemory || parseFloat(row.TotalMemory_GB) <= maxMemory;
+                
+                // Sunquest filter
+                const sunquestMatch = !sunquestFilter || 
+                    (sunquestFilter === 'has' && row.Sunquest_Apps) ||
+                    (sunquestFilter === 'none' && !row.Sunquest_Apps);
+                
+                // IP Subnet filter
+                let ipMatch = true;
+                if (ipSubnetFilter) {
+                    const ipPattern = ipSubnetFilter.replace(/\*/g, '\\d+').replace(/\./g, '\\.');
+                    const regex = new RegExp('^' + ipPattern + '$');
+                    ipMatch = row.Primary_IP && regex.test(row.Primary_IP);
+                }
+                
+                return hostnameMatch && osMatch && statusMatch && 
+                       maxMemoryMatch && sunquestMatch && ipMatch;
+            });
+            
+            updateDisplay();
+        }
+        
+        function clearFilters() {
+            document.getElementById('hostnameFilter').value = '';
+            document.getElementById('osFilter').value = '';
+            document.getElementById('statusFilter').value = '';
+            document.getElementById('maxMemory').value = '';
+            document.getElementById('sunquestFilter').value = '';
+            document.getElementById('ipSubnetFilter').value = '';
+            document.getElementById('subnetGroupFilter').value = '';
+            
+            filteredData = [...allData];
+            updateDisplay();
+        }
+        
+        function updateDisplay() {
+            const tableBody = document.getElementById('tableBody');
+            tableBody.innerHTML = '';
+            
+            if (filteredData.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="14" style="text-align: center; color: #6c757d;">No data matches the current filters</td></tr>';
+                updateStats();
+                return;
+            }
+            
+            // Check if subnet grouping is enabled
+            const subnetGroupFilter = document.getElementById('subnetGroupFilter').value;
+            if (subnetGroupFilter) {
+                displayGroupedBySubnet(filteredData, subnetGroupFilter);
+                updateStats();
+                return;
+            }
+            
+            filteredData.forEach(row => {
+                const tr = document.createElement('tr');
+                
+                // Add CSS classes based on data
+                if (row.Status === 'Error') {
+                    tr.classList.add('status-error');
+                }
+                
+                // Check system status for color coding
+                const memoryGB = parseFloat(row.TotalMemory_GB) || 0;
+                const osName = row.OS_Name || '';
+                
+                // Color coding logic
+                if (osName.includes('Windows 11')) {
+                    // Green: Windows 11 (done)
+                    tr.classList.add('win11-ready');
+                } else if (osName.includes('Windows 10') || osName.includes('Windows 7') || osName.includes('Windows 8')) {
+                    if (memoryGB >= 16) {
+                        // Yellow: Windows 10 or below with 16GB+ RAM
+                        tr.classList.add('win10-ready');
+                    } else {
+                        // Red: Windows 10 or below with less than 16GB RAM
+                        tr.classList.add('needs-upgrade');
+                    }
+                } else {
+                    // Red: Everything else (unknown OS, etc.)
+                    tr.classList.add('needs-upgrade');
+                }
+                
+                tr.innerHTML = `
+                    <td>${row.Timestamp || ''}</td>
+                    <td>${row.Hostname || ''}</td>
+                    <td>${row.OS_Name || ''}</td>
+                    <td>${row.Manufacturer || ''}</td>
+                    <td>${row.Model || ''}</td>
+                    <td>${row.TotalMemory_GB || ''}</td>
+                    <td>${row.Processor || ''}</td>
+                    <td>${row.Drive_C_Percent_Free || ''}%</td>
+                    <td>${row.Drive_D_Percent_Free || ''}%</td>
+                    <td>${row.Primary_IP || ''}</td>
+                    <td>${row.Subnet || ''}</td>
+                    <td>${row.Sunquest_Apps || ''}</td>
+                    <td title="${row.TraceRoute || ''}">${row.TraceRoute ? `<button onclick="showTraceRoute('${row.Hostname}', \`${row.TraceRoute}\`)">View Route</button>` : ''}</td>
+                    <td class="status-${row.Status === 'Success' ? 'success' : 'error'}">${row.Status || ''}</td>
+                `;
+                tableBody.appendChild(tr);
+            });
+            
+            updateStats();
+        }
+        
+        function displayGroupedBySubnet(data, targetSubnet) {
+            const tableBody = document.getElementById('tableBody');
+            tableBody.innerHTML = '';
+            
+            // Group data by subnet
+            const subnetGroups = {};
+            data.forEach(row => {
+                const subnet = row.Subnet || 'Unknown';
+                if (!subnetGroups[subnet]) {
+                    subnetGroups[subnet] = [];
+                }
+                subnetGroups[subnet].push(row);
+            });
+            
+            // Display each subnet group
+            Object.keys(subnetGroups).sort().forEach(subnet => {
+                const groupData = subnetGroups[subnet];
+                
+                // Add subnet header row
+                const headerRow = document.createElement('tr');
+                headerRow.style.backgroundColor = '#e9ecef';
+                headerRow.style.fontWeight = 'bold';
+                headerRow.innerHTML = `
+                    <td colspan="14" style="padding: 15px; border-bottom: 2px solid #dee2e6;">
+                        Subnet: ${subnet} (${groupData.length} systems)
+                    </td>
+                `;
+                tableBody.appendChild(headerRow);
+                
+                // Add systems in this subnet
+                groupData.forEach(row => {
+                    const tr = document.createElement('tr');
+                    
+                    // Add CSS classes based on data
+                    if (row.Status === 'Error') {
+                        tr.classList.add('status-error');
+                    }
+                    
+                    // Check system status for color coding
+                    const memoryGB = parseFloat(row.TotalMemory_GB) || 0;
+                    const osName = row.OS_Name || '';
+                    
+                    // Color coding logic
+                    if (osName.includes('Windows 11')) {
+                        // Green: Windows 11 (done)
+                        tr.classList.add('win11-ready');
+                    } else if (osName.includes('Windows 10') || osName.includes('Windows 7') || osName.includes('Windows 8')) {
+                        if (memoryGB >= 16) {
+                            // Yellow: Windows 10 or below with 16GB+ RAM
+                            tr.classList.add('win10-ready');
+                        } else {
+                            // Red: Windows 10 or below with less than 16GB RAM
+                            tr.classList.add('needs-upgrade');
+                        }
+                    } else {
+                        // Red: Everything else (unknown OS, etc.)
+                        tr.classList.add('needs-upgrade');
+                    }
+                    
+                    tr.innerHTML = `
+                        <td>${row.Timestamp || ''}</td>
+                        <td>${row.Hostname || ''}</td>
+                        <td>${row.OS_Name || ''}</td>
+                        <td>${row.Manufacturer || ''}</td>
+                        <td>${row.Model || ''}</td>
+                        <td>${row.TotalMemory_GB || ''}</td>
+                        <td>${row.Processor || ''}</td>
+                        <td>${row.Drive_C_Percent_Free || ''}%</td>
+                        <td>${row.Drive_D_Percent_Free || ''}%</td>
+                        <td>${row.Primary_IP || ''}</td>
+                        <td>${row.Subnet || ''}</td>
+                        <td>${row.Sunquest_Apps || ''}</td>
+                        <td title="${row.TraceRoute || ''}">${row.TraceRoute ? `<button onclick="showTraceRoute('${row.Hostname}', \`${row.TraceRoute}\`)">View Route</button>` : ''}</td>
+                        <td class="status-${row.Status === 'Success' ? 'success' : 'error'}">${row.Status || ''}</td>
+                    `;
+                    tableBody.appendChild(tr);
+                });
+                
+                // Add spacing between subnet groups
+                const spacerRow = document.createElement('tr');
+                spacerRow.innerHTML = '<td colspan="14" style="height: 10px;"></td>';
+                tableBody.appendChild(spacerRow);
+            });
+        }
+        
+        function updateStats() {
+            document.getElementById('totalSystems').textContent = filteredData.length;
+            document.getElementById('successfulSystems').textContent = filteredData.filter(r => r.Status === 'Success').length;
+            document.getElementById('errorSystems').textContent = filteredData.filter(r => r.Status === 'Error').length;
+            document.getElementById('lowRamSystems').textContent = filteredData.filter(r => parseFloat(r.TotalMemory_GB) < 16).length;
+            
+            // Windows 11 Done - already running Windows 11
+            const win11DoneCount = filteredData.filter(r => {
+                const osName = r.OS_Name || '';
+                return osName.includes('Windows 11');
+            }).length;
+            
+            // PCs Need Work - Windows 10 or below with less than 16GB RAM OR unknown OS
+            const pcsNeedWorkCount = filteredData.filter(r => {
+                const memoryGB = parseFloat(r.TotalMemory_GB) || 0;
+                const osName = r.OS_Name || '';
+                
+                // Red: Windows 10 or below with less than 16GB RAM OR unknown OS
+                if (osName.includes('Windows 11')) {
+                    return false; // Green - done
+                } else if (osName.includes('Windows 10') || osName.includes('Windows 7') || osName.includes('Windows 8')) {
+                    return memoryGB < 16; // Red if less than 16GB RAM
+                } else {
+                    return true; // Red - unknown OS
+                }
+            }).length;
+            
+            document.getElementById('win11Done').textContent = win11DoneCount;
+            document.getElementById('pcsNeedWork').textContent = pcsNeedWorkCount;
+        }
+        
+        function exportToCSV() {
+            exportData(filteredData, 'filtered_system_data.csv');
+        }
+        
+        function exportAllToCSV() {
+            exportData(allData, 'all_system_data.csv');
+        }
+        
+        function exportData(data, filename) {
+            if (data.length === 0) {
+                alert('No data to export');
+                return;
+            }
+            
+            const headers = Object.keys(data[0]);
+            const csvContent = [
+                headers.join(','),
+                ...data.map(row => headers.map(header => `"${(row[header] || '').toString().replace(/"/g, '""')}"`).join(','))
+            ].join('\n');
+            
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.click();
+            window.URL.revokeObjectURL(url);
+        }
+        
+        function refreshData() {
+            document.getElementById('tableBody').innerHTML = '<tr><td colspan="14" class="loading">Refreshing data...</td></tr>';
+            loadCSVData();
+        }
+        
+        function showTraceRoute(hostname, traceRoute) {
+            // Create a modal or popup to display the trace route
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(0,0,0,0.5);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                z-index: 1000;
+            `;
+            
+            const modalContent = document.createElement('div');
+            modalContent.style.cssText = `
+                background: white;
+                padding: 20px;
+                border-radius: 8px;
+                max-width: 80%;
+                max-height: 80%;
+                overflow: auto;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            `;
+            
+            modalContent.innerHTML = `
+                <h3 style="margin-top: 0; color: #495057;">Trace Route for ${hostname}</h3>
+                <pre style="background: #f8f9fa; padding: 15px; border-radius: 4px; white-space: pre-wrap; font-family: monospace; font-size: 12px; max-height: 400px; overflow-y: auto;">${traceRoute}</pre>
+                <div style="text-align: center; margin-top: 15px;">
+                    <button class="btn" onclick="this.closest('.modal').remove()">Close</button>
+                </div>
+            `;
+            
+            modal.className = 'modal';
+            modal.appendChild(modalContent);
+            document.body.appendChild(modal);
+            
+            // Close modal when clicking outside
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.remove();
+                }
+            });
+        }
+        
+        // Auto-refresh disabled for local file usage
+        // setInterval(refreshData, 30000);
+        
+        // Load data on page load
+        document.addEventListener('DOMContentLoaded', loadCSVData);
+    </script>
+</body>
+</html>

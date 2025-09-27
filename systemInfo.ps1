@@ -180,6 +180,12 @@ function Initialize-CSVFile {
     param([string]$FilePath)
     
     try {
+        # Ensure the directory exists
+        $directory = Split-Path -Path $FilePath -Parent
+        if ($directory -and -not (Test-Path $directory)) {
+            New-Item -ItemType Directory -Path $directory -Force | Out-Null
+        }
+        
         # Check if CSV file exists
         if (-not (Test-Path $FilePath)) {
             # Create CSV with headers
@@ -905,8 +911,12 @@ function Start-SingleHostCheck {
         
         # Export single host data to CSV
         $csvFile = Get-FilePath -Default $script:Config.OutputFiles.SystemDataCSV
+        Write-ScriptLog "Exporting single host data to CSV: $csvFile" -Type "Info"
         if (Export-SystemDataToCSV -Results @($result) -FilePath $csvFile) {
             Write-ScriptLog "Host data exported to CSV: $csvFile" -Type "Success"
+        }
+        else {
+            Write-ScriptLog "Failed to export single host data to CSV" -Type "Error"
         }
     }
     else {
@@ -1377,8 +1387,12 @@ function Invoke-EnhancedDiscovery {
 
     # Export to CSV
     $csvFile = Get-FilePath -Default $script:Config.OutputFiles.SystemDataCSV
+    Write-ScriptLog "Exporting data to CSV: $csvFile" -Type "Info"
     if (Export-SystemDataToCSV -Results $results -FilePath $csvFile) {
         Write-ScriptLog "Data exported to CSV: $csvFile" -Type "Success"
+    }
+    else {
+        Write-ScriptLog "Failed to export data to CSV" -Type "Error"
     }
     
     Invoke-Pause
