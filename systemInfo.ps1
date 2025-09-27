@@ -683,31 +683,14 @@ function Invoke-SunquestCheck {
     $scriptBlock = {
         param($hostname)
         try {
-            # Use registry instead of Win32_Product for performance
-            $software = @()
-            $keys = @(
-                "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
-                "SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
-            )
-            
-            $reg = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey('LocalMachine', $hostname)
-            foreach ($key in $keys) {
-                $regKey = $reg.OpenSubKey($key)
-                if ($regKey) {
-                    foreach ($subKeyName in $regKey.GetSubKeyNames()) {
-                        $subKey = $regKey.OpenSubKey($subKeyName)
-                        $displayName = $subKey.GetValue("DisplayName")
-                        if ($displayName -like "Sunquest Lab*") {
-                            $software += $displayName
-                        }
-                    }
-                }
-            }
+            # Use Win32_Product (old method) for Sunquest app detection
+            $products = Get-WmiObject -ComputerName $hostname -Class Win32_Product -ErrorAction Stop
+            $sunquestApps = $products | Where-Object { $_.Name -like "Sunquest Lab*" } | Select-Object -ExpandProperty Name
             
             return @{
                 Hostname = $hostname
                 Success = $true
-                Apps = $software | Select-Object -Unique
+                Apps = $sunquestApps | Select-Object -Unique
             }
         }
         catch {
