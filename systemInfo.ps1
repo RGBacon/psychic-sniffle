@@ -319,10 +319,45 @@ function Export-SystemDataToCSV {
         
         # Append to CSV file
         foreach ($row in $csvData) {
-            $csvLine = ($row.Values | ForEach-Object { 
-                if ($_ -eq $null) { "" } 
+            # Create CSV line with proper field order matching headers
+            $csvLine = @(
+                $row.Timestamp,
+                $row.Hostname,
+                $row.OS_Name,
+                $row.OS_Version,
+                $row.OS_Build,
+                $row.Manufacturer,
+                $row.Model,
+                $row.TotalMemory_GB,
+                $row.Processor,
+                $row.Cores,
+                $row.LogicalProcessors,
+                $row.LastBoot,
+                $row.Drive_C,
+                $row.Drive_C_Free_GB,
+                $row.Drive_C_Size_GB,
+                $row.Drive_C_Percent_Free,
+                $row.Drive_D,
+                $row.Drive_D_Free_GB,
+                $row.Drive_D_Size_GB,
+                $row.Drive_D_Percent_Free,
+                $row.Primary_IP,
+                $row.Primary_Gateway,
+                $row.Primary_DNS,
+                $row.MAC_Address,
+                $row.Subnet,
+                $row.Sunquest_Apps,
+                $row.Printer_Count,
+                $row.Printer_Names,
+                $row.TraceRoute,
+                $row.Status,
+                $row.Error_Message
+            ) | ForEach-Object { 
+                if ($_ -eq $null -or $_ -eq "") { '""' } 
                 else { '"' + ($_.ToString() -replace '"', '""') + '"' } 
-            }) -join ","
+            }
+            
+            $csvLine = ($csvLine -join ",") + "`n"
             Add-Content -Path $FilePath -Value $csvLine -Encoding UTF8
         }
         
@@ -683,14 +718,31 @@ function Invoke-SunquestCheck {
     $scriptBlock = {
         param($hostname)
         try {
-            # Use Win32_Product (old method) for Sunquest app detection
-            $products = Get-WmiObject -ComputerName $hostname -Class Win32_Product -ErrorAction Stop
-            $sunquestApps = $products | Where-Object { $_.Name -like "Sunquest Lab*" } | Select-Object -ExpandProperty Name
+            # Use registry instead of Win32_Product for performance
+            $software = @()
+            $keys = @(
+                "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+                "SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
+            )
+            
+            $reg = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey('LocalMachine', $hostname)
+            foreach ($key in $keys) {
+                $regKey = $reg.OpenSubKey($key)
+                if ($regKey) {
+                    foreach ($subKeyName in $regKey.GetSubKeyNames()) {
+                        $subKey = $regKey.OpenSubKey($subKeyName)
+                        $displayName = $subKey.GetValue("DisplayName")
+                        if ($displayName -like "Sunquest Lab*") {
+                            $software += $displayName
+                        }
+                    }
+                }
+            }
             
             return @{
                 Hostname = $hostname
                 Success = $true
-                Apps = $sunquestApps | Select-Object -Unique
+                Apps = $software | Select-Object -Unique
             }
         }
         catch {
