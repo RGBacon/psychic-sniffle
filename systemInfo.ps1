@@ -504,7 +504,7 @@ function Get-RemoteSystemInfo {
         if ($Options.CheckTracert) {
             try {
                 $tracertOutput = tracert -h 10 $ComputerName 2>&1
-                $result.Data.TraceRoute = $tracertOutput -join "`n"
+                $result.Data.TraceRoute = $tracertOutput -join "; "
             }
             catch {
                 $result.Data.TraceRoute = "Tracert failed: $($_.Exception.Message)"
@@ -1332,8 +1332,8 @@ function Invoke-EnhancedDiscovery {
                 # Get tracert information
                 if ($Options.CheckTracert) {
                     try {
-                        $tracertOutput = tracert -h 10 $ComputerName 2>&1
-                        $result.Data.TraceRoute = $tracertOutput -join "`n"
+                $tracertOutput = tracert -h 10 $ComputerName 2>&1
+                $result.Data.TraceRoute = $tracertOutput -join "; "
                     }
                     catch {
                         $result.Data.TraceRoute = "Tracert failed: $($_.Exception.Message)"
@@ -1574,8 +1574,8 @@ function Invoke-NetworkAnalysis {
                 # Get tracert information
                 if ($Options.CheckTracert) {
                     try {
-                        $tracertOutput = tracert -h 10 $ComputerName 2>&1
-                        $result.Data.TraceRoute = $tracertOutput -join "`n"
+                $tracertOutput = tracert -h 10 $ComputerName 2>&1
+                $result.Data.TraceRoute = $tracertOutput -join "; "
                     }
                     catch {
                         $result.Data.TraceRoute = "Tracert failed: $($_.Exception.Message)"
