@@ -41,7 +41,7 @@ function Create-DefaultConfiguration {
             SystemDataCSV = "system_data.csv"
             HTMLViewer = "system_data_viewer.html"
         }
-        Timeout = 30
+        Timeout = 90
         MaxParallelJobs = 10
         DefaultMessage = "IMPORTANT: This device has been identified for replacement. Please contact IT Support via Teams or Outlook to schedule your device replacement. This message will repeat hourly until action is taken."
         SystemInfo = @{
@@ -355,7 +355,7 @@ function Get-RemoteSystemInfo {
     param(
         [Parameter(Mandatory)][string]$ComputerName,
         [hashtable]$Options = @{},
-        [int]$Timeout = 30
+        [int]$Timeout = 90
     )
     
     $result = @{
@@ -458,6 +458,17 @@ function Get-RemoteSystemInfo {
                 }
             }
         }
+        
+        # Get tracert information
+        if ($Options.CheckTracert) {
+            try {
+                $tracertOutput = tracert -h 10 $ComputerName 2>&1
+                $result.Data.TraceRoute = $tracertOutput -join "`n"
+            }
+            catch {
+                $result.Data.TraceRoute = "Tracert failed: $($_.Exception.Message)"
+            }
+        }
     }
     catch {
         $result.Success = $false
@@ -476,7 +487,8 @@ function Start-ParallelJobs {
         [object[]]$ArgumentList = @(),
         [string]$Activity = "Processing",
         [int]$MaxJobs = $script:Config.MaxParallelJobs,
-        [scriptblock]$InitializationScript = $null
+        [scriptblock]$InitializationScript = $null,
+        [int]$JobTimeout = $script:Config.Timeout
     )
     
     $jobs = @()
@@ -484,23 +496,25 @@ function Start-ParallelJobs {
     $totalItems = $InputObjects.Count
     $completed = 0
     $jobIndex = 0
+    $jobStartTimes = @{}
     
     # Start initial batch
     while ($jobs.Count -lt $MaxJobs -and $jobIndex -lt $totalItems) {
         $item = $InputObjects[$jobIndex]
         $args = @($item) + $ArgumentList
-        $jobs += Start-Job -ScriptBlock $ScriptBlock -ArgumentList $args -InitializationScript $InitializationScript
+        $job = Start-Job -ScriptBlock $ScriptBlock -ArgumentList $args -InitializationScript $InitializationScript
+        $jobs += $job
+        $jobStartTimes[$job.Id] = Get-Date
         $jobIndex++
     }
     
-    # Process jobs with timeout handling
-    $maxWaitTime = $script:Config.Timeout * 2  # Allow 2x timeout for job completion
-    $startTime = Get-Date
+    Write-ScriptLog "Started $($jobs.Count) parallel jobs with $JobTimeout second timeout per job" -Type "Info"
     
     while ($completed -lt $totalItems) {
         $completedJob = $jobs | Wait-Job -Any -Timeout 1
         
         if ($completedJob) {
+            # Job completed successfully
             $results += Receive-Job -Job $completedJob
             $completed++
             
@@ -508,27 +522,62 @@ function Start-ParallelJobs {
             
             Remove-Job -Job $completedJob -Force
             $jobs = $jobs | Where-Object { $_ -ne $completedJob }
+            $jobStartTimes.Remove($completedJob.Id)
             
             # Start new job if available
             if ($jobIndex -lt $totalItems) {
                 $item = $InputObjects[$jobIndex]
                 $args = @($item) + $ArgumentList
-                $jobs += Start-Job -ScriptBlock $ScriptBlock -ArgumentList $args -InitializationScript $InitializationScript
+                $job = Start-Job -ScriptBlock $ScriptBlock -ArgumentList $args -InitializationScript $InitializationScript
+                $jobs += $job
+                $jobStartTimes[$job.Id] = Get-Date
                 $jobIndex++
             }
         }
         else {
-            # Check for stuck jobs
-            $elapsed = (Get-Date) - $startTime
-            if ($elapsed.TotalSeconds -gt $maxWaitTime) {
-                Write-ScriptLog "Timeout reached. Cleaning up remaining jobs..." -Type "Warning"
-                $jobs | Remove-Job -Force
-                break
+            # Check for individual job timeouts
+            $currentTime = Get-Date
+            $timedOutJobs = @()
+            
+            foreach ($job in $jobs) {
+                $elapsed = ($currentTime - $jobStartTimes[$job.Id]).TotalSeconds
+                if ($elapsed -gt $JobTimeout) {
+                    Write-ScriptLog "Job for host timed out after $JobTimeout seconds. Removing job." -Type "Warning"
+                    $timedOutJobs += $job
+                }
+            }
+            
+            # Remove timed out jobs
+            foreach ($timedOutJob in $timedOutJobs) {
+                Remove-Job -Job $timedOutJob -Force
+                $jobs = $jobs | Where-Object { $_ -ne $timedOutJob }
+                $jobStartTimes.Remove($timedOutJob.Id)
+                $completed++
+                
+                # Add timeout result
+                $results += @{
+                    Hostname = "Unknown"
+                    Success = $false
+                    Error = "Job timed out after $JobTimeout seconds"
+                }
+                
+                Write-Progress -Activity $Activity -Status "Completed $completed of $totalItems (1 timeout)" -PercentComplete (($completed / $totalItems) * 100)
+                
+                # Start new job if available
+                if ($jobIndex -lt $totalItems) {
+                    $item = $InputObjects[$jobIndex]
+                    $args = @($item) + $ArgumentList
+                    $job = Start-Job -ScriptBlock $ScriptBlock -ArgumentList $args -InitializationScript $InitializationScript
+                    $jobs += $job
+                    $jobStartTimes[$job.Id] = Get-Date
+                    $jobIndex++
+                }
             }
         }
     }
     
     Write-Progress -Activity $Activity -Completed
+    Write-ScriptLog "Parallel job processing completed. $completed of $totalItems jobs finished." -Type "Success"
     return $results
 }
 #endregion
@@ -552,7 +601,6 @@ $script:MenuDefinitions = @{
             @{Text = "Start Enhanced Information"; Action = { Invoke-EnhancedDiscovery }}
             @{Text = "Check Single Host"; Action = { Start-SingleHostCheck }}
             @{Text = "Open CSV Data Viewer"; Action = { Open-CSVViewer }}
-            @{Text = "Export CSV Data"; Action = { Export-CSVData }}
             @{Text = "Configure Options"; Action = { Configure-SystemInfoOptions }}
             @{Text = "Return to Main Menu"; Action = { Show-Menu -MenuName "Main" }}
         )
@@ -856,17 +904,9 @@ function Start-SingleHostCheck {
         }
         
         # Export single host data to CSV
-        if ((Read-Host "`nExport this host data to CSV? (Y/N)") -eq 'Y') {
-            $csvFile = Get-FilePath -Default $script:Config.OutputFiles.SystemDataCSV
-            if (Export-SystemDataToCSV -Results @($result) -FilePath $csvFile) {
-                Write-ScriptLog "Host data exported to CSV: $csvFile" -Type "Success"
-                
-                # Open HTML viewer
-                $htmlFile = Get-FilePath -Default $script:Config.OutputFiles.HTMLViewer
-                if ((Read-Host "Open HTML viewer? (Y/N)") -eq 'Y') {
-                    Open-HTMLViewer -HTMLFilePath $htmlFile
-                }
-            }
+        $csvFile = Get-FilePath -Default $script:Config.OutputFiles.SystemDataCSV
+        if (Export-SystemDataToCSV -Results @($result) -FilePath $csvFile) {
+            Write-ScriptLog "Host data exported to CSV: $csvFile" -Type "Success"
         }
     }
     else {
@@ -941,77 +981,6 @@ function Open-CSVViewer {
     Show-Menu -MenuName "SystemInfo"
 }
 
-function Export-CSVData {
-    Clear-Host
-    Write-MenuHeader -Title "EXPORT CSV DATA"
-    
-    $csvFile = Get-FilePath -Default $script:Config.OutputFiles.SystemDataCSV
-    
-    if (-not (Test-Path $csvFile)) {
-        Write-ScriptLog "CSV file not found: $csvFile" -Type "Error"
-        Write-ScriptLog "Please run 'Start Enhanced Information' first to create data." -Type "Warning"
-        Invoke-Pause
-        Show-Menu -MenuName "SystemInfo"
-        return
-    }
-    
-    Write-Host "Current CSV file: $csvFile" -ForegroundColor $script:Config.Colors.Info
-    Write-Host "File size: $([math]::Round((Get-Item $csvFile).Length / 1KB, 2)) KB" -ForegroundColor $script:Config.Colors.Info
-    
-    # Count records
-    try {
-        $csvContent = Get-Content $csvFile
-        $recordCount = $csvContent.Count - 1  # Subtract header
-        Write-Host "Records in file: $recordCount" -ForegroundColor $script:Config.Colors.Info
-    }
-    catch {
-        Write-ScriptLog "Error reading CSV file: $_" -Type "Error"
-        Invoke-Pause
-        Show-Menu -MenuName "SystemInfo"
-        return
-    }
-    
-    Write-Host "`nExport Options:" -ForegroundColor $script:Config.Colors.Highlight
-    Write-Host "1. Copy CSV file to desktop"
-    Write-Host "2. Open CSV file location"
-    Write-Host "3. Open CSV in Excel"
-    Write-Host "4. Return to System Info Menu"
-    
-    $choice = Read-Host "`nEnter your choice (1-4)"
-    
-    switch ($choice) {
-        "1" {
-            $desktopPath = [Environment]::GetFolderPath("Desktop")
-            $destFile = Join-Path $desktopPath "system_data_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
-            Copy-Item $csvFile $destFile
-            Write-ScriptLog "CSV file copied to desktop: $destFile" -Type "Success"
-        }
-        "2" {
-            Start-Process "explorer.exe" -ArgumentList "/select,`"$csvFile`""
-            Write-ScriptLog "Opened file location" -Type "Success"
-        }
-        "3" {
-            if (Get-Command excel.exe -ErrorAction SilentlyContinue) {
-                Start-Process excel.exe -ArgumentList $csvFile
-                Write-ScriptLog "Opening CSV in Excel" -Type "Success"
-            }
-            else {
-                Start-Process $csvFile
-                Write-ScriptLog "Opening CSV with default application" -Type "Success"
-            }
-        }
-        "4" {
-            Show-Menu -MenuName "SystemInfo"
-            return
-        }
-        default {
-            Write-ScriptLog "Invalid choice" -Type "Warning"
-        }
-    }
-    
-    Invoke-Pause
-    Show-Menu -MenuName "SystemInfo"
-}
 #endregion
 
 #region Check Unique Apps
@@ -1175,7 +1144,7 @@ function Invoke-CheckUniqueApps {
 #region Enhanced Discovery
 function Invoke-EnhancedDiscovery {
     Clear-Host
-    Write-MenuHeader -Title "ENHANCED SYSTEM DISCOVERY"
+    Write-MenuHeader -Title "ENHANCED SYSTEM INFORMATION"
     
     $hostsFile = Get-FilePath -Default $script:Config.HostsFile
     $hosts = Get-HostsList -HostsFilePath $hostsFile
@@ -1187,7 +1156,7 @@ function Invoke-EnhancedDiscovery {
     }
     
     $outputFile = Get-FilePath -Default $script:Config.OutputFiles.EnhancedInfo
-    if (-not (Initialize-OutputFile -FilePath $outputFile -Title "Enhanced System Discovery Report")) {
+    if (-not (Initialize-OutputFile -FilePath $outputFile -Title "Enhanced System Information Report")) {
         Invoke-Pause
         Show-Menu -MenuName "Main"
         return
@@ -1201,7 +1170,7 @@ function Invoke-EnhancedDiscovery {
         CheckStorage = $true
     }
     
-    Write-ScriptLog "Starting enhanced discovery on $($hosts.Count) hosts..." -Type "Info"
+    Write-ScriptLog "Starting enhanced system information scan on $($hosts.Count) hosts..." -Type "Info"
     $scriptBlock = {
         param($hostname, $options)
         Get-RemoteSystemInfo -ComputerName $hostname -Options $options
@@ -1211,7 +1180,7 @@ function Invoke-EnhancedDiscovery {
             param(
                 [Parameter(Mandatory)][string]$ComputerName,
                 [hashtable]$Options = @{},
-                [int]$Timeout = 30
+                [int]$Timeout = 90
             )
             
             $result = @{
@@ -1314,6 +1283,17 @@ function Invoke-EnhancedDiscovery {
                         }
                     }
                 }
+                
+                # Get tracert information
+                if ($Options.CheckTracert) {
+                    try {
+                        $tracertOutput = tracert -h 10 $ComputerName 2>&1
+                        $result.Data.TraceRoute = $tracertOutput -join "`n"
+                    }
+                    catch {
+                        $result.Data.TraceRoute = "Tracert failed: $($_.Exception.Message)"
+                    }
+                }
             }
             catch {
                 $result.Success = $false
@@ -1323,7 +1303,7 @@ function Invoke-EnhancedDiscovery {
             return $result
         }
     }
-    $results = Start-ParallelJobs -InputObjects $hosts -ScriptBlock $scriptBlock -ArgumentList $options -InitializationScript $initScript -Activity "Enhanced Discovery"
+    $results = Start-ParallelJobs -InputObjects $hosts -ScriptBlock $scriptBlock -ArgumentList $options -InitializationScript $initScript -Activity "Enhanced System Information"
     
     # Format results
     $output = New-Object System.Text.StringBuilder
@@ -1393,66 +1373,18 @@ function Invoke-EnhancedDiscovery {
     
     Add-Content -Path $outputFile -Value $output.ToString()
     
-    Write-ScriptLog "Enhanced discovery completed. Results saved to: $outputFile" -Type "Success"
+    Write-ScriptLog "Enhanced system information scan completed. Results saved to: $outputFile" -Type "Success"
 
     # Export to CSV
     $csvFile = Get-FilePath -Default $script:Config.OutputFiles.SystemDataCSV
     if (Export-SystemDataToCSV -Results $results -FilePath $csvFile) {
         Write-ScriptLog "Data exported to CSV: $csvFile" -Type "Success"
-        
-        # Open HTML viewer
-        $htmlFile = Get-FilePath -Default $script:Config.OutputFiles.HTMLViewer
-        if ((Read-Host "`nOpen HTML viewer in browser? (Y/N)") -eq 'Y') {
-            Open-HTMLViewer -HTMLFilePath $htmlFile
-        }
-    }
-
-    # Export to HTML (legacy)
-    if ((Read-Host "`nExport results to legacy HTML report? (Y/N)") -eq 'Y') {
-        Export-ResultsToHtml -Results $results
     }
     
     Invoke-Pause
     Show-Menu -MenuName "Main"
 }
 
-function Export-ResultsToHtml {
-    param([array]$Results)
-
-    $filteredResults = $Results
-
-    # Filtering menu
-    $filterChoice = Read-Host "Apply filters before exporting? (Y/N)"
-    if ($filterChoice -eq 'Y') {
-        $filters = @{}
-        $minDiskSpace = Read-Host "Filter by minimum free disk space (GB) - leave blank for no filter"
-        if ($minDiskSpace -match '^\d+$') {
-            $filters.MinDiskSpace = [int]$minDiskSpace
-        }
-
-        $minMemory = Read-Host "Filter by minimum total memory (GB) - leave blank for no filter"
-        if ($minMemory -match '^\d+$') {
-            $filters.MinMemory = [int]$minMemory
-        }
-
-        $osFilter = Read-Host "Filter by OS Name (e.g., *Windows 10*) - leave blank for no filter"
-        if ($osFilter) {
-            $filters.OS = $osFilter
-        }
-
-        $filteredResults = $Results | Where-Object {
-            $result = $_;
-            ($filters.MinDiskSpace -eq $null -or $result.Data.Storage.FreeGB -ge $filters.MinDiskSpace) -and
-            ($filters.MinMemory -eq $null -or $result.Data.OS.TotalMemoryGB -ge $filters.MinMemory) -and
-            ($filters.OS -eq $null -or $result.Data.OS.Name -like $filters.OS)
-        }
-    }
-
-    $htmlReportPath = Get-FilePath -Default "Enhanced_Discovery_Report.html"
-    $filteredResults | ConvertTo-Html -Property Hostname, @{Name='OS';Expression={$_.Data.OS.Name}}, @{Name='Memory (GB)';Expression={$_.Data.OS.TotalMemoryGB}}, @{Name='Disk Space (GB)';Expression={$_.Data.Storage.FreeGB}} -Title "Enhanced System Discovery Report" | Out-File $htmlReportPath
-
-    Write-ScriptLog "HTML report generated at $htmlReportPath" -Type "Success"
-}
 #endregion
 
 #region Network Analysis
@@ -1486,7 +1418,7 @@ function Invoke-NetworkAnalysis {
             param(
                 [Parameter(Mandatory)][string]$ComputerName,
                 [hashtable]$Options = @{},
-                [int]$Timeout = 30
+                [int]$Timeout = 90
             )
             
             $result = @{
@@ -1587,6 +1519,17 @@ function Invoke-NetworkAnalysis {
                             FileSystem = $_.FileSystem
                             VolumeName = $_.VolumeName
                         }
+                    }
+                }
+                
+                # Get tracert information
+                if ($Options.CheckTracert) {
+                    try {
+                        $tracertOutput = tracert -h 10 $ComputerName 2>&1
+                        $result.Data.TraceRoute = $tracertOutput -join "`n"
+                    }
+                    catch {
+                        $result.Data.TraceRoute = "Tracert failed: $($_.Exception.Message)"
                     }
                 }
             }
