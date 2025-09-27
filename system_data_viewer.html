@@ -197,14 +197,29 @@
                 <input type="text" id="ipSubnetFilter" placeholder="e.g., 10.24.*.* or 192.168.1.*">
             </div>
             <div class="filter-group">
-                <label for="subnetGroupFilter">Group by Subnet:</label>
+                <label for="subnetGroupFilter">Group by Network:</label>
                 <select id="subnetGroupFilter">
                     <option value="">No Grouping</option>
+                    <option value="major">Major Networks (10.x.x.x)</option>
+                    <option value="subnet16">/16 Subnets (10.24.x.x)</option>
+                    <option value="subnet24">/24 Subnets (10.24.104.x)</option>
                 </select>
             </div>
             <div class="filter-group">
                 <label for="maxMemory">Max Memory (GB):</label>
                 <input type="number" id="maxMemory" placeholder="Max GB" min="0">
+            </div>
+            <div class="filter-group" style="display: block; width: 100%; margin-top: 15px;">
+                <label>Device Models:</label>
+                <div id="modelFilterContainer" style="max-height: 150px; overflow-y: auto; border: 1px solid #ced4da; border-radius: 4px; padding: 10px; background: white; margin-top: 5px;">
+                    <div style="margin-bottom: 10px;">
+                        <button type="button" class="btn btn-secondary" onclick="selectAllModels()" style="font-size: 12px; padding: 5px 10px;">Select All</button>
+                        <button type="button" class="btn btn-secondary" onclick="clearAllModels()" style="font-size: 12px; padding: 5px 10px; margin-left: 5px;">Clear All</button>
+                    </div>
+                    <div id="modelCheckboxes" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 5px;">
+                        <!-- Model checkboxes will be populated here -->
+                    </div>
+                </div>
             </div>
             <div style="margin-top: 15px;">
                 <button class="btn" onclick="applyFilters()">Apply Filters</button>
@@ -228,7 +243,7 @@
             </div>
             <div class="stat-item">
                 <div class="stat-number" id="lowRamSystems">0</div>
-                <div class="stat-label">Low RAM (< 16GB)</div>
+                <div class="stat-label">Low RAM (< 14GB)</div>
             </div>
             <div class="stat-item">
                 <div class="stat-number" id="win11Done">0</div>
@@ -278,7 +293,7 @@
             <div style="margin-bottom: 15px; padding: 10px; background: white; border-radius: 4px; border-left: 4px solid #667eea;">
                 <strong>Windows 11 Upgrade Requirements:</strong>
                 <ul style="margin: 5px 0; padding-left: 20px;">
-                    <li><strong>RAM:</strong> 16GB minimum</li>
+                    <li><strong>RAM:</strong> 14GB minimum</li>
                     <li><strong>Storage:</strong> 64GB minimum</li>
                     <li><strong>OS:</strong> Windows 10 or below</li>
                 </ul>
@@ -292,11 +307,11 @@
                 </div>
                 <div style="display: flex; align-items: center;">
                     <div style="width: 20px; height: 20px; background-color: #fff3cd; border: 1px solid #ccc; margin-right: 8px;"></div>
-                    <span>Windows 10 or below with 16GB+ RAM</span>
+                    <span>Windows 10 or below with 14GB+ RAM</span>
                 </div>
                 <div style="display: flex; align-items: center;">
                     <div style="width: 20px; height: 20px; background-color: #f8d7da; border: 1px solid #ccc; margin-right: 8px;"></div>
-                    <span>Needs Upgrade (Windows 10 or below with < 16GB RAM or unknown OS)</span>
+                    <span>Needs Upgrade (Windows 10 or below with < 14GB RAM or unknown OS)</span>
                 </div>
             </div>
         </div>
@@ -483,15 +498,10 @@
                 sunquestFilter.appendChild(option);
             });
             
-            // Populate Subnet Group Filter
-            const subnetGroupFilter = document.getElementById('subnetGroupFilter');
-            subnetGroupFilter.innerHTML = '<option value="">No Grouping</option>';
-            Array.from(subnetSet).sort().forEach(subnet => {
-                const option = document.createElement('option');
-                option.value = subnet;
-                option.textContent = subnet;
-                subnetGroupFilter.appendChild(option);
-            });
+            // Subnet Group Filter is now static with predefined options
+            
+            // Populate Model Filter
+            populateModelFilter();
         }
         
         function applyFilters() {
@@ -501,6 +511,9 @@
             const maxMemory = parseFloat(document.getElementById('maxMemory').value) || 0;
             const sunquestFilter = document.getElementById('sunquestFilter').value;
             const ipSubnetFilter = document.getElementById('ipSubnetFilter').value;
+            
+            // Get selected models
+            const selectedModels = getSelectedModels();
             
             filteredData = allData.filter(row => {
                 // Basic filters
@@ -534,8 +547,11 @@
                     ipMatch = row.Primary_IP && regex.test(row.Primary_IP);
                 }
                 
+                // Model filter
+                const modelMatch = selectedModels.length === 0 || selectedModels.includes(row.Model);
+                
                 return hostnameMatch && osMatch && statusMatch && 
-                       maxMemoryMatch && sunquestMatch && ipMatch;
+                       maxMemoryMatch && sunquestMatch && ipMatch && modelMatch;
             });
             
             updateDisplay();
@@ -549,6 +565,9 @@
             document.getElementById('sunquestFilter').value = '';
             document.getElementById('ipSubnetFilter').value = '';
             document.getElementById('subnetGroupFilter').value = '';
+            
+            // Clear all model checkboxes
+            clearAllModels();
             
             filteredData = [...allData];
             updateDisplay();
@@ -567,7 +586,7 @@
             // Check if subnet grouping is enabled
             const subnetGroupFilter = document.getElementById('subnetGroupFilter').value;
             if (subnetGroupFilter) {
-                displayGroupedBySubnet(filteredData, subnetGroupFilter);
+                displayGroupedByNetwork(filteredData, subnetGroupFilter);
                 updateStats();
                 return;
             }
@@ -589,11 +608,11 @@
                     // Green: Windows 11 (done)
                     tr.classList.add('win11-ready');
                 } else if (osName.includes('Windows 10') || osName.includes('Windows 7') || osName.includes('Windows 8')) {
-                    if (memoryGB >= 16) {
-                        // Yellow: Windows 10 or below with 16GB+ RAM
+                    if (memoryGB >= 14) {
+                        // Yellow: Windows 10 or below with 14GB+ RAM
                         tr.classList.add('win10-ready');
                     } else {
-                        // Red: Windows 10 or below with less than 16GB RAM
+                        // Red: Windows 10 or below with less than 14GB RAM
                         tr.classList.add('needs-upgrade');
                     }
                 } else {
@@ -623,36 +642,62 @@
             updateStats();
         }
         
-        function displayGroupedBySubnet(data, targetSubnet) {
+        function displayGroupedByNetwork(data, groupType) {
             const tableBody = document.getElementById('tableBody');
             tableBody.innerHTML = '';
             
-            // Group data by subnet
-            const subnetGroups = {};
+            // Group data by network type
+            const networkGroups = {};
             data.forEach(row => {
-                const subnet = row.Subnet || 'Unknown';
-                if (!subnetGroups[subnet]) {
-                    subnetGroups[subnet] = [];
+                const ip = row.Primary_IP || '';
+                let groupKey = 'Unknown';
+                
+                if (ip) {
+                    const parts = ip.split('.');
+                    switch (groupType) {
+                        case 'major':
+                            // Group by major network (10.x.x.x, 192.168.x.x, etc.)
+                            if (parts.length >= 1) {
+                                groupKey = `${parts[0]}.x.x.x`;
+                            }
+                            break;
+                        case 'subnet16':
+                            // Group by /16 subnet (10.24.x.x)
+                            if (parts.length >= 2) {
+                                groupKey = `${parts[0]}.${parts[1]}.x.x`;
+                            }
+                            break;
+                        case 'subnet24':
+                            // Group by /24 subnet (10.24.104.x)
+                            if (parts.length >= 3) {
+                                groupKey = `${parts[0]}.${parts[1]}.${parts[2]}.x`;
+                            }
+                            break;
+                    }
                 }
-                subnetGroups[subnet].push(row);
+                
+                if (!networkGroups[groupKey]) {
+                    networkGroups[groupKey] = [];
+                }
+                networkGroups[groupKey].push(row);
             });
             
-            // Display each subnet group
-            Object.keys(subnetGroups).sort().forEach(subnet => {
-                const groupData = subnetGroups[subnet];
+            // Display each network group
+            Object.keys(networkGroups).sort().forEach(network => {
+                const groupData = networkGroups[network];
                 
-                // Add subnet header row
+                // Add network header row
                 const headerRow = document.createElement('tr');
                 headerRow.style.backgroundColor = '#e9ecef';
                 headerRow.style.fontWeight = 'bold';
                 headerRow.innerHTML = `
                     <td colspan="14" style="padding: 15px; border-bottom: 2px solid #dee2e6;">
-                        Subnet: ${subnet} (${groupData.length} systems)
+                        Network: ${network} (${groupData.length} systems)
                     </td>
                 `;
                 tableBody.appendChild(headerRow);
                 
-                // Add systems in this subnet
+                // Add systems in this network
                 groupData.forEach(row => {
                     const tr = document.createElement('tr');
                     
@@ -670,11 +715,11 @@
                         // Green: Windows 11 (done)
                         tr.classList.add('win11-ready');
                     } else if (osName.includes('Windows 10') || osName.includes('Windows 7') || osName.includes('Windows 8')) {
-                        if (memoryGB >= 16) {
-                            // Yellow: Windows 10 or below with 16GB+ RAM
+                        if (memoryGB >= 14) {
+                            // Yellow: Windows 10 or below with 14GB+ RAM
                             tr.classList.add('win10-ready');
                         } else {
-                            // Red: Windows 10 or below with less than 16GB RAM
+                            // Red: Windows 10 or below with less than 14GB RAM
                             tr.classList.add('needs-upgrade');
                         }
                     } else {
@@ -701,7 +746,7 @@
                     tableBody.appendChild(tr);
                 });
                 
-                // Add spacing between subnet groups
+                // Add spacing between network groups
                 const spacerRow = document.createElement('tr');
                 spacerRow.innerHTML = '<td colspan="14" style="height: 10px;"></td>';
                 tableBody.appendChild(spacerRow);
@@ -712,7 +757,7 @@
             document.getElementById('totalSystems').textContent = filteredData.length;
             document.getElementById('successfulSystems').textContent = filteredData.filter(r => r.Status === 'Success').length;
             document.getElementById('errorSystems').textContent = filteredData.filter(r => r.Status === 'Error').length;
-            document.getElementById('lowRamSystems').textContent = filteredData.filter(r => parseFloat(r.TotalMemory_GB) < 16).length;
+            document.getElementById('lowRamSystems').textContent = filteredData.filter(r => parseFloat(r.TotalMemory_GB) < 14).length;
             
             // Windows 11 Done - already running Windows 11
             const win11DoneCount = filteredData.filter(r => {
@@ -720,16 +765,16 @@
                 return osName.includes('Windows 11');
             }).length;
             
-            // PCs Need Work - Windows 10 or below with less than 16GB RAM OR unknown OS
+            // PCs Need Work - Windows 10 or below with less than 14GB RAM OR unknown OS
             const pcsNeedWorkCount = filteredData.filter(r => {
                 const memoryGB = parseFloat(r.TotalMemory_GB) || 0;
                 const osName = r.OS_Name || '';
                 
-                // Red: Windows 10 or below with less than 16GB RAM OR unknown OS
+                // Red: Windows 10 or below with less than 14GB RAM OR unknown OS
                 if (osName.includes('Windows 11')) {
                     return false; // Green - done
                 } else if (osName.includes('Windows 10') || osName.includes('Windows 7') || osName.includes('Windows 8')) {
-                    return memoryGB < 16; // Red if less than 16GB RAM
+                    return memoryGB < 14; // Red if less than 14GB RAM
                 } else {
                     return true; // Red - unknown OS
                 }
@@ -817,6 +862,69 @@
                 if (e.target === modal) {
                     modal.remove();
                 }
+            });
+        }
+        
+        // Model filter functions
+        function populateModelFilter() {
+            const modelSet = new Set();
+            allData.forEach(row => {
+                if (row.Model) {
+                    modelSet.add(row.Model);
+                }
+            });
+            
+            const modelCheckboxes = document.getElementById('modelCheckboxes');
+            modelCheckboxes.innerHTML = '';
+            
+            Array.from(modelSet).sort().forEach(model => {
+                const checkboxDiv = document.createElement('div');
+                checkboxDiv.style.display = 'flex';
+                checkboxDiv.style.alignItems = 'center';
+                checkboxDiv.style.marginBottom = '3px';
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.id = `model_${model.replace(/[^a-zA-Z0-9]/g, '_')}`;
+                checkbox.value = model;
+                checkbox.checked = true; // Default to selected
+                checkbox.style.marginRight = '8px';
+                
+                const label = document.createElement('label');
+                label.htmlFor = checkbox.id;
+                label.textContent = model;
+                label.style.fontSize = '13px';
+                label.style.cursor = 'pointer';
+                label.style.margin = '0';
+                
+                checkboxDiv.appendChild(checkbox);
+                checkboxDiv.appendChild(label);
+                modelCheckboxes.appendChild(checkboxDiv);
+            });
+        }
+        
+        function getSelectedModels() {
+            const checkboxes = document.querySelectorAll('#modelCheckboxes input[type="checkbox"]');
+            const selected = [];
+            checkboxes.forEach(checkbox => {
+                if (checkbox.checked) {
+                    selected.push(checkbox.value);
+                }
+            });
+            return selected;
+        }
+        
+        function selectAllModels() {
+            const checkboxes = document.querySelectorAll('#modelCheckboxes input[type="checkbox"]');
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = true;
+            });
+        }
+        
+        function clearAllModels() {
+            const checkboxes = document.querySelectorAll('#modelCheckboxes input[type="checkbox"]');
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = false;
             });
         }
         

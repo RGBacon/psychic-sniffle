@@ -33,18 +33,19 @@ function Convert-EnhancedInfoToCSV {
         $records = @()
         $currentRecord = @{}
         $lines = $content -split "`n"
+        $traceRouteLines = $null
         
         foreach ($line in $lines) {
             $line = $line.Trim()
             
             # Skip empty lines and headers
             if ([string]::IsNullOrWhiteSpace($line) -or 
-                $line -match "Enhanced System|Generated on|===|Hostname|OS Name|Manufacturer") {
+                $line -match "Enhanced System|Generated on|===|------") {
                 continue
             }
             
-            # Check if this is a new host entry
-            if ($line -match "^Hostname:\s*(.+)$") {
+            # Check if this is a new host entry (successful)
+            if ($line -match "^Host:\s*(PC-[A-Z0-9-]+)$") {
                 # Save previous record if exists
                 if ($currentRecord.Count -gt 0) {
                     $records += $currentRecord
@@ -85,23 +86,25 @@ function Convert-EnhancedInfoToCSV {
                     Error_Message = ""
                 }
             }
+            # Check for error entries and skip them
+            elseif ($line -match "^Host:\s*(PC-[A-Z0-9-]+)\s*-\s*ERROR:") {
+                # Skip error entries - don't create records for them
+                continue
+            }
             # Parse other fields
-            elseif ($line -match "^OS Name:\s*(.+)$") {
+            elseif ($line -match "^OS:\s*(.+)\s*\(Build\s*(\d+)\)$") {
                 $currentRecord.OS_Name = $matches[1]
+                $currentRecord.OS_Build = $matches[2]
+                # Extract version from OS name
+                if ($matches[1] -match "Windows\s+(\d+)") {
+                    $currentRecord.OS_Version = "10.0.$($matches[2])"
+                }
             }
-            elseif ($line -match "^OS Version:\s*(.+)$") {
-                $currentRecord.OS_Version = $matches[1]
-            }
-            elseif ($line -match "^OS Build:\s*(.+)$") {
-                $currentRecord.OS_Build = $matches[1]
-            }
-            elseif ($line -match "^Manufacturer:\s*(.+)$") {
+            elseif ($line -match "^Hardware:\s*(.+?)\s+(.+)$") {
                 $currentRecord.Manufacturer = $matches[1]
+                $currentRecord.Model = $matches[2]
             }
-            elseif ($line -match "^Model:\s*(.+)$") {
-                $currentRecord.Model = $matches[1]
-            }
-            elseif ($line -match "^Total Memory:\s*(.+)\s*GB$") {
+            elseif ($line -match "^Memory:\s*([0-9.]+)\s*GB$") {
                 $currentRecord.TotalMemory_GB = $matches[1]
             }
             elseif ($line -match "^Processor:\s*(.+)$") {
@@ -113,35 +116,43 @@ function Convert-EnhancedInfoToCSV {
             elseif ($line -match "^Logical Processors:\s*(.+)$") {
                 $currentRecord.LogicalProcessors = $matches[1]
             }
+            elseif ($line -match "^\s*IP:\s*([0-9.]+)") {
+                $currentRecord.Primary_IP = $matches[1]
+                # Extract subnet from IP
+                if ($matches[1] -match "^(\d+\.\d+\.\d+)\.\d+$") {
+                    $currentRecord.Subnet = "$($matches[1]).*"
+                }
+            }
+            elseif ($line -match "^\s*Gateway:\s*(.+)$") {
+                $currentRecord.Primary_Gateway = $matches[1]
+            }
+            elseif ($line -match "^\s*DNS:\s*(.+)$") {
+                $currentRecord.Primary_DNS = $matches[1]
+            }
+            elseif ($line -match "^\s*MAC Address:\s*(.+)$") {
+                $currentRecord.MAC_Address = $matches[1]
+            }
+            elseif ($line -match "^\s*C:\s*-\s*([0-9.]+)GB\s*free\s*of\s*([0-9.]+)GB\s*\(([0-9.]+)%\s*free\)") {
+                $currentRecord.Drive_C = "C:"
+                $currentRecord.Drive_C_Free_GB = $matches[1]
+                $currentRecord.Drive_C_Size_GB = $matches[2]
+                $currentRecord.Drive_C_Percent_Free = $matches[3]
+            }
             elseif ($line -match "^Last Boot:\s*(.+)$") {
                 $currentRecord.LastBoot = $matches[1]
             }
-            elseif ($line -match "^Primary IP:\s*(.+)$") {
-                $currentRecord.Primary_IP = $matches[1]
+            elseif ($line -match "Tracing route to") {
+                # Start collecting traceroute data
+                $traceRouteLines = @($line)
             }
-            elseif ($line -match "^Gateway:\s*(.+)$") {
-                $currentRecord.Primary_Gateway = $matches[1]
+            elseif ($line -match "^\s*\d+\s+\d+\s*ms" -and $traceRouteLines) {
+                # Collect traceroute hop lines
+                $traceRouteLines += $line
             }
-            elseif ($line -match "^DNS:\s*(.+)$") {
-                $currentRecord.Primary_DNS = $matches[1]
-            }
-            elseif ($line -match "^MAC Address:\s*(.+)$") {
-                $currentRecord.MAC_Address = $matches[1]
-            }
-            elseif ($line -match "^Subnet:\s*(.+)$") {
-                $currentRecord.Subnet = $matches[1]
-            }
-            elseif ($line -match "^Sunquest Apps:\s*(.+)$") {
-                $currentRecord.Sunquest_Apps = $matches[1]
-            }
-            elseif ($line -match "^Printer Count:\s*(.+)$") {
-                $currentRecord.Printer_Count = $matches[1]
-            }
-            elseif ($line -match "^Printer Names:\s*(.+)$") {
-                $currentRecord.Printer_Names = $matches[1]
-            }
-            elseif ($line -match "^Trace Route:\s*(.+)$") {
-                $currentRecord.TraceRoute = $matches[1]
+            elseif ($line -match "Trace complete" -and $traceRouteLines) {
+                # End of traceroute - save it as single line with semicolons
+                $currentRecord.TraceRoute = ($traceRouteLines -join "; ")
+                $traceRouteLines = $null
             }
             elseif ($line -match "^Status:\s*(.+)$") {
                 $currentRecord.Status = $matches[1]
@@ -180,10 +191,8 @@ function Convert-EnhancedInfoToCSV {
             $row = @()
             foreach ($header in $headers) {
                 $value = if ($record.ContainsKey($header)) { $record[$header] } else { "" }
-                # Escape CSV values
-                if ($value -and $value.ToString().Contains(",") -or $value.ToString().Contains('"')) {
-                    $value = '"' + ($value.ToString() -replace '"', '""') + '"'
-                }
+                # Escape CSV values - always quote to handle commas, quotes, and newlines
+                $value = '"' + ($value.ToString() -replace '"', '""') + '"'
                 $row += $value
             }
             $csvContent += ($row -join ",")
