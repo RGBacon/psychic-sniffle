@@ -116,6 +116,30 @@
             position: sticky;
             top: 0;
             z-index: 10;
+            cursor: pointer;
+            user-select: none;
+            transition: background-color 0.2s;
+        }
+        th:hover {
+            background: #e9ecef;
+        }
+        th.sortable {
+            position: relative;
+        }
+        th.sortable::after {
+            content: ' ↕';
+            opacity: 0.5;
+            font-size: 0.8em;
+        }
+        th.sort-asc::after {
+            content: ' ↑';
+            opacity: 1;
+            color: #667eea;
+        }
+        th.sort-desc::after {
+            content: ' ↓';
+            opacity: 1;
+            color: #667eea;
         }
         tr:hover {
             opacity: 0.8;
@@ -140,6 +164,18 @@
         .needs-upgrade {
             background-color: #f8d7da;
         }
+        .lastboot-recent {
+            color: #28a745;
+            font-weight: bold;
+        }
+        .lastboot-old {
+            color: #dc3545;
+            font-weight: bold;
+        }
+        .lastboot-medium {
+            color: #ffc107;
+            font-weight: bold;
+        }
         .export-section {
             padding: 20px;
             background: #f8f9fa;
@@ -160,6 +196,104 @@
             padding: 40px;
             color: #6c757d;
         }
+        .progress-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+        .progress-content {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            min-width: 300px;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background-color: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 15px 0;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .highlight {
+            background-color: #ffeb3b;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-weight: bold;
+        }
+        .search-result {
+            background-color: #e3f2fd;
+            border-left: 4px solid #2196f3;
+        }
+        .diff-increased {
+            background-color: #c8e6c9;
+            color: #2e7d32;
+            font-weight: bold;
+        }
+        .diff-decreased {
+            background-color: #ffcdd2;
+            color: #c62828;
+            font-weight: bold;
+        }
+        .diff-changed {
+            background-color: #fff3e0;
+            color: #ef6c00;
+            font-weight: bold;
+        }
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        .comparison-table th,
+        .comparison-table td {
+            padding: 8px;
+            border: 1px solid #dee2e6;
+            text-align: left;
+        }
+        .comparison-table th {
+            background: #f8f9fa;
+            font-weight: bold;
+        }
+        .comparison-cell {
+            position: relative;
+        }
+        .diff-indicator {
+            position: absolute;
+            right: 5px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 14px;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -172,18 +306,12 @@
         <div class="filters">
             <div class="filter-group">
                 <label for="hostnameFilter">Hostname:</label>
-                <input type="text" id="hostnameFilter" placeholder="Filter by hostname...">
+                <input type="text" id="hostnameFilter" placeholder="Filter by hostname... (Ctrl+F to focus)">
             </div>
             <div class="filter-group">
                 <label for="osFilter">Operating System:</label>
                 <select id="osFilter">
                     <option value="">All OS</option>
-                </select>
-            </div>
-            <div class="filter-group">
-                <label for="statusFilter">Status:</label>
-                <select id="statusFilter">
-                    <option value="">All Status</option>
                 </select>
             </div>
             <div class="filter-group">
@@ -224,6 +352,7 @@
             <div style="margin-top: 15px;">
                 <button class="btn" onclick="applyFilters()">Apply Filters</button>
                 <button class="btn btn-secondary" onclick="clearFilters()">Clear Filters</button>
+                <button class="btn btn-secondary" onclick="resetToDefaults()">Reset to Defaults</button>
                 <button class="btn btn-secondary" onclick="loadCSVData()">Load CSV File</button>
             </div>
         </div>
@@ -259,25 +388,25 @@
             <table id="dataTable">
                 <thead>
                     <tr>
-                        <th>Timestamp</th>
-                        <th>Hostname</th>
-                        <th>OS</th>
-                        <th>Manufacturer</th>
-                        <th>Model</th>
-                        <th>Memory (GB)</th>
-                        <th>Processor</th>
-                        <th>C: Free %</th>
-                        <th>D: Free %</th>
-                        <th>Primary IP</th>
-                        <th>Subnet</th>
-                        <th>Sunquest Apps</th>
-                        <th>TraceRoute</th>
-                        <th>Status</th>
+                        <th class="sortable" onclick="sortTable('Timestamp')">Timestamp</th>
+                        <th class="sortable" onclick="sortTable('Hostname')">Hostname</th>
+                        <th class="sortable" onclick="sortTable('OS_Name')">OS</th>
+                        <th class="sortable" onclick="sortTable('Manufacturer')">Manufacturer</th>
+                        <th class="sortable" onclick="sortTable('Model')">Model</th>
+                        <th class="sortable" onclick="sortTable('TotalMemory_GB')">Memory (GB)</th>
+                        <th class="sortable" onclick="sortTable('LastBoot')">Last Boot</th>
+                        <th class="sortable" onclick="sortTable('Processor')">Processor</th>
+                        <th class="sortable" onclick="sortTable('Drive_C_Percent_Free')">C: Free %</th>
+                        <th class="sortable" onclick="sortTable('Primary_IP')">Primary IP</th>
+                        <th class="sortable" onclick="sortTable('Subnet')">Subnet</th>
+                        <th class="sortable" onclick="sortTable('Sunquest_Apps')">Sunquest Apps</th>
+                        <th class="sortable" onclick="sortTable('Printer_Count')">Printers</th>
+                        <th class="sortable" onclick="sortTable('TraceRoute')">TraceRoute</th>
                     </tr>
                 </thead>
                 <tbody id="tableBody">
                     <tr>
-                        <td colspan="14" class="loading">Loading data...</td>
+                        <td colspan="14" class="loading">Click "Load CSV File" to begin</td>
                     </tr>
                 </tbody>
             </table>
@@ -286,6 +415,8 @@
         <div class="export-section">
             <button class="btn" onclick="exportToCSV()">Export Filtered Data to CSV</button>
             <button class="btn btn-secondary" onclick="exportAllToCSV()">Export All Data to CSV</button>
+            <button class="btn btn-secondary" onclick="exportToJSON()">Export Filtered Data to JSON</button>
+            <button class="btn btn-secondary" onclick="showColumnSelector()">Export Selected Columns</button>
         </div>
         
         <div style="padding: 20px; background: #f8f9fa; border-top: 1px solid #dee2e6;">
@@ -320,22 +451,263 @@
     <script>
         let allData = [];
         let filteredData = [];
+        let latestData = []; // Latest entry for each hostname
+        let historyData = {}; // All entries grouped by hostname
+        let currentSort = { column: null, direction: 'asc' };
+        let currentSearchIndex = -1;
+        let searchResults = [];
+        
+        // Filter persistence functions
+        function saveFilterState() {
+            const filterState = {
+                hostnameFilter: document.getElementById('hostnameFilter').value,
+                osFilter: document.getElementById('osFilter').value,
+                maxMemory: document.getElementById('maxMemory').value,
+                sunquestFilter: document.getElementById('sunquestFilter').value,
+                ipSubnetFilter: document.getElementById('ipSubnetFilter').value,
+                subnetGroupFilter: document.getElementById('subnetGroupFilter').value,
+                selectedModels: getSelectedModels(),
+                sortColumn: currentSort.column,
+                sortDirection: currentSort.direction
+            };
+            localStorage.setItem('systemDataViewerFilters', JSON.stringify(filterState));
+        }
+        
+        function loadFilterState() {
+            try {
+                const savedState = localStorage.getItem('systemDataViewerFilters');
+                if (savedState) {
+                    const filterState = JSON.parse(savedState);
+                    
+                    // Restore filter values
+                    document.getElementById('hostnameFilter').value = filterState.hostnameFilter || '';
+                    document.getElementById('osFilter').value = filterState.osFilter || '';
+                    document.getElementById('maxMemory').value = filterState.maxMemory || '';
+                    document.getElementById('sunquestFilter').value = filterState.sunquestFilter || '';
+                    document.getElementById('ipSubnetFilter').value = filterState.ipSubnetFilter || '';
+                    document.getElementById('subnetGroupFilter').value = filterState.subnetGroupFilter || '';
+                    
+                    // Restore sort state
+                    if (filterState.sortColumn) {
+                        currentSort.column = filterState.sortColumn;
+                        currentSort.direction = filterState.sortDirection || 'asc';
+                    }
+                    
+                    // Restore selected models (after populateModelFilter is called)
+                    setTimeout(() => {
+                        if (filterState.selectedModels && filterState.selectedModels.length > 0) {
+                            const checkboxes = document.querySelectorAll('#modelCheckboxes input[type="checkbox"]');
+                            checkboxes.forEach(checkbox => {
+                                checkbox.checked = filterState.selectedModels.includes(checkbox.value);
+                            });
+                        }
+                    }, 100);
+                    
+                    return true;
+                }
+            } catch (error) {
+                console.warn('Failed to load filter state:', error);
+            }
+            return false;
+        }
+        
+        function resetToDefaults() {
+            // Clear localStorage
+            localStorage.removeItem('systemDataViewerFilters');
+            
+            // Reset all filters
+            clearFilters();
+            
+            // Reset sort
+            currentSort = { column: null, direction: 'asc' };
+            updateSortIndicators();
+            
+            console.log('Filter state reset to defaults');
+        }
+        
+        function showProgress(message, showSpinner = true) {
+            const progressContainer = document.createElement('div');
+            progressContainer.className = 'progress-container';
+            progressContainer.id = 'progressContainer';
+            
+            const progressContent = document.createElement('div');
+            progressContent.className = 'progress-content';
+            
+            let content = `<h3 style="margin-top: 0; color: #495057;">${message}</h3>`;
+            
+            if (showSpinner) {
+                content += '<div class="spinner"></div>';
+            } else {
+                content += `
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                `;
+            }
+            
+            progressContent.innerHTML = content;
+            progressContainer.appendChild(progressContent);
+            document.body.appendChild(progressContainer);
+        }
+        
+        function updateProgress(percent, message = '') {
+            const progressFill = document.getElementById('progressFill');
+            const progressContainer = document.getElementById('progressContainer');
+            
+            if (progressFill) {
+                progressFill.style.width = percent + '%';
+            }
+            
+            if (message && progressContainer) {
+                const h3 = progressContainer.querySelector('h3');
+                if (h3) {
+                    h3.textContent = message;
+                }
+            }
+        }
+        
+        function hideProgress() {
+            const progressContainer = document.getElementById('progressContainer');
+            if (progressContainer) {
+                progressContainer.remove();
+            }
+        }
+        
+        function highlightText(text, searchTerm) {
+            if (!searchTerm) return text;
+            
+            const regex = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+            return text.replace(regex, '<span class="highlight">$1</span>');
+        }
+        
+        function performSearch(searchTerm) {
+            if (!searchTerm) {
+                clearSearchHighlights();
+                return;
+            }
+            
+            searchResults = [];
+            const tableRows = document.querySelectorAll('#tableBody tr');
+            
+            tableRows.forEach((row, index) => {
+                const hostnameCell = row.cells[1]; // Hostname column
+                if (hostnameCell && hostnameCell.textContent.toLowerCase().includes(searchTerm.toLowerCase())) {
+                    searchResults.push({ row, index });
+                    row.classList.add('search-result');
+                    
+                    // Highlight the text
+                    const originalText = hostnameCell.textContent;
+                    hostnameCell.innerHTML = highlightText(originalText, searchTerm);
+                } else {
+                    row.classList.remove('search-result');
+                }
+            });
+            
+            currentSearchIndex = -1;
+        }
+        
+        function clearSearchHighlights() {
+            const tableRows = document.querySelectorAll('#tableBody tr');
+            tableRows.forEach(row => {
+                row.classList.remove('search-result');
+                const hostnameCell = row.cells[1];
+                if (hostnameCell) {
+                    hostnameCell.innerHTML = hostnameCell.textContent;
+                }
+            });
+            searchResults = [];
+            currentSearchIndex = -1;
+        }
+        
+        function setupKeyboardShortcuts() {
+            document.addEventListener('keydown', (e) => {
+                // Ctrl+F to focus search
+                if (e.ctrlKey && e.key === 'f') {
+                    e.preventDefault();
+                    document.getElementById('hostnameFilter').focus();
+                    document.getElementById('hostnameFilter').select();
+                }
+                
+                
+                // Escape to clear search
+                if (e.key === 'Escape') {
+                    clearSearchHighlights();
+                    document.getElementById('hostnameFilter').value = '';
+                    applyFilters();
+                }
+            });
+        }
+        
+        function calculateLastBootAge(lastBootStr) {
+            if (!lastBootStr) return { text: 'Unknown', days: -1, className: '' };
+            
+            try {
+                const lastBoot = new Date(lastBootStr);
+                const now = new Date();
+                const diffMs = now - lastBoot;
+                const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                
+                let className = '';
+                let text = '';
+                
+                if (diffDays < 0) {
+                    text = 'Future date';
+                    className = 'lastboot-old';
+                } else if (diffDays === 0) {
+                    text = 'Today';
+                    className = 'lastboot-recent';
+                } else if (diffDays === 1) {
+                    text = 'Yesterday';
+                    className = 'lastboot-recent';
+                } else if (diffDays < 7) {
+                    text = `${diffDays} days ago`;
+                    className = 'lastboot-recent';
+                } else if (diffDays < 30) {
+                    text = `${diffDays} days ago`;
+                    className = 'lastboot-medium';
+                } else {
+                    text = `${diffDays} days ago`;
+                    className = 'lastboot-old';
+                }
+                
+                return { text, days: diffDays, className };
+            } catch (error) {
+                return { text: 'Invalid date', days: -1, className: 'lastboot-old' };
+            }
+        }
         
         // Load CSV data
         async function loadCSVData() {
+            console.log('loadCSVData function called');
             try {
-                // Try to load the CSV file using a file input
+                // Create file input element
                 const fileInput = document.createElement('input');
                 fileInput.type = 'file';
                 fileInput.accept = '.csv';
-                fileInput.style.display = 'none';
+                fileInput.style.position = 'absolute';
+                fileInput.style.left = '-9999px';
+                fileInput.style.top = '-9999px';
+                fileInput.style.opacity = '0';
+                fileInput.style.pointerEvents = 'none';
                 document.body.appendChild(fileInput);
+                
+                console.log('File input created and added to DOM');
                 
                 // Create a promise to handle the file selection
                 const filePromise = new Promise((resolve, reject) => {
+                    let resolved = false;
+                    
                     fileInput.onchange = (e) => {
+                        console.log('File input change event triggered');
+                        if (resolved) return;
+                        resolved = true;
+                        
                         const file = e.target.files[0];
                         if (file) {
+                            console.log('File selected:', file.name);
+                            // Show progress after file is selected
+                            showProgress('Reading file...', true);
+                            updateProgress(20, 'Reading file...');
                             const reader = new FileReader();
                             reader.onload = (e) => resolve(e.target.result);
                             reader.onerror = () => reject(new Error('Failed to read file'));
@@ -345,18 +717,58 @@
                         }
                     };
                     
+                    // Add timeout for file picker cancellation
+                    setTimeout(() => {
+                        if (!resolved) {
+                            console.log('File selection timed out');
+                            resolved = true;
+                            document.body.removeChild(fileInput);
+                            reject(new Error('File selection cancelled or timed out'));
+                        }
+                    }, 30000); // 30 second timeout
+                    
                     // Auto-trigger file selection
-                    fileInput.click();
+                    console.log('Triggering file input click');
+                    try {
+                        fileInput.click();
+                        console.log('File input click triggered successfully');
+                    } catch (error) {
+                        console.error('Error triggering file input click:', error);
+                        reject(error);
+                    }
                 });
                 
                 const csvText = await filePromise;
                 document.body.removeChild(fileInput);
                 
+                updateProgress(40, 'Parsing CSV data...');
+                
                 allData = parseCSV(csvText);
-                filteredData = [...allData];
-                updateDisplay();
+                
+                updateProgress(60, 'Processing data history...');
+                
+                processDataForHistory();
+                filteredData = [...latestData];
+                
+                updateProgress(80, 'Loading filters...');
+                
                 populateFilters();
+                
+                updateProgress(90, 'Loading saved settings...');
+                
+                // Load saved filter state after filters are populated
+                setTimeout(() => {
+                    if (loadFilterState()) {
+                        applyFilters();
+                    } else {
+                        updateDisplay();
+                    }
+                    
+                    updateProgress(100, 'Finalizing...');
+                    hideProgress();
+                }, 100);
             } catch (error) {
+                hideProgress();
                 console.error('Error loading CSV data:', error);
                 document.getElementById('tableBody').innerHTML = `
                     <tr>
@@ -372,21 +784,52 @@
         
         function parseCSV(csvText) {
             const lines = csvText.split('\n');
-            const headers = lines[0].split(',').map(h => h.replace(/"/g, ''));
+            if (lines.length < 2) {
+                throw new Error('CSV file must contain at least a header row and one data row');
+            }
+            
+            const headers = parseCSVLine(lines[0]);
+            if (headers.length === 0) {
+                throw new Error('CSV file must contain valid headers');
+            }
+            
             const data = [];
+            let errorCount = 0;
+            const maxErrors = 10;
             
             for (let i = 1; i < lines.length; i++) {
                 if (lines[i].trim()) {
-                    const values = parseCSVLine(lines[i]);
-                    if (values.length === headers.length) {
-                        const row = {};
-                        headers.forEach((header, index) => {
-                            row[header] = values[index];
-                        });
-                        data.push(row);
+                    try {
+                        const values = parseCSVLine(lines[i]);
+                        if (values.length === headers.length) {
+                            const row = {};
+                            headers.forEach((header, index) => {
+                                row[header] = values[index] || '';
+                            });
+                            data.push(row);
+                        } else {
+                            errorCount++;
+                            if (errorCount <= maxErrors) {
+                                console.warn(`Row ${i + 1}: Expected ${headers.length} columns, got ${values.length}. Skipping row.`);
+                            }
+                        }
+                    } catch (error) {
+                        errorCount++;
+                        if (errorCount <= maxErrors) {
+                            console.warn(`Row ${i + 1}: Parse error - ${error.message}. Skipping row.`);
+                        }
                     }
                 }
             }
+            
+            if (errorCount > maxErrors) {
+                console.warn(`Additional ${errorCount - maxErrors} rows had errors and were skipped.`);
+            }
+            
+            if (data.length === 0) {
+                throw new Error('No valid data rows found in CSV file');
+            }
+            
             return data;
         }
         
@@ -394,29 +837,85 @@
             const result = [];
             let current = '';
             let inQuotes = false;
+            let i = 0;
             
-            for (let i = 0; i < line.length; i++) {
+            while (i < line.length) {
                 const char = line[i];
+                const nextChar = i + 1 < line.length ? line[i + 1] : '';
+                
                 if (char === '"') {
-                    inQuotes = !inQuotes;
+                    if (inQuotes && nextChar === '"') {
+                        // Escaped quote
+                        current += '"';
+                        i += 2;
+                    } else {
+                        // Toggle quote state
+                        inQuotes = !inQuotes;
+                        i++;
+                    }
                 } else if (char === ',' && !inQuotes) {
+                    // Field separator
                     result.push(current.trim());
                     current = '';
+                    i++;
+                } else if (char === '\n' || char === '\r') {
+                    // Handle line breaks within quoted fields
+                    if (inQuotes) {
+                        current += char;
+                    } else {
+                        // End of line
+                        break;
+                    }
+                    i++;
                 } else {
                     current += char;
+                    i++;
                 }
             }
+            
+            // Add the last field
             result.push(current.trim());
-            return result.map(val => val.replace(/^"|"$/g, ''));
+            
+            // Clean up the results
+            return result.map(val => {
+                // Remove surrounding quotes and unescape internal quotes
+                if (val.startsWith('"') && val.endsWith('"')) {
+                    val = val.slice(1, -1);
+                }
+                // Replace escaped quotes with single quotes
+                val = val.replace(/""/g, '"');
+                return val;
+            });
+        }
+        
+        function processDataForHistory() {
+            // Group data by hostname
+            historyData = {};
+            allData.forEach(row => {
+                const hostname = row.Hostname;
+                if (!historyData[hostname]) {
+                    historyData[hostname] = [];
+                }
+                historyData[hostname].push(row);
+            });
+            
+            // Sort each hostname's entries by timestamp (newest first) and get the latest
+            latestData = [];
+            Object.keys(historyData).forEach(hostname => {
+                const entries = historyData[hostname];
+                // Sort by timestamp descending (newest first)
+                entries.sort((a, b) => new Date(b.Timestamp) - new Date(a.Timestamp));
+                // Add the latest entry to latestData
+                latestData.push(entries[0]);
+            });
         }
         
         function populateFilters() {
             const osSet = new Set();
             const subnetSet = new Set();
-            const statusSet = new Set();
             const sunquestSet = new Set();
             
-            allData.forEach(row => {
+            latestData.forEach(row => {
                 // OS Filter
                 if (row.OS_Name) {
                     const osName = row.OS_Name;
@@ -437,11 +936,6 @@
                     } else {
                         osSet.add(osName); // Non-Windows OS
                     }
-                }
-                
-                // Status Filter
-                if (row.Status) {
-                    statusSet.add(row.Status);
                 }
                 
                 // Sunquest Filter
@@ -478,15 +972,6 @@
                 osFilter.appendChild(option);
             });
             
-            // Populate Status Filter
-            const statusFilter = document.getElementById('statusFilter');
-            statusFilter.innerHTML = '<option value="">All Status</option>';
-            Array.from(statusSet).sort().forEach(status => {
-                const option = document.createElement('option');
-                option.value = status;
-                option.textContent = status;
-                statusFilter.appendChild(option);
-            });
             
             // Populate Sunquest Filter
             const sunquestFilter = document.getElementById('sunquestFilter');
@@ -505,17 +990,20 @@
         }
         
         function applyFilters() {
-            const hostnameFilter = document.getElementById('hostnameFilter').value.toLowerCase();
-            const osFilter = document.getElementById('osFilter').value;
-            const statusFilter = document.getElementById('statusFilter').value;
-            const maxMemory = parseFloat(document.getElementById('maxMemory').value) || 0;
-            const sunquestFilter = document.getElementById('sunquestFilter').value;
-            const ipSubnetFilter = document.getElementById('ipSubnetFilter').value;
+            showProgress('Applying filters...', true);
             
-            // Get selected models
-            const selectedModels = getSelectedModels();
+            // Use setTimeout to allow UI to update
+            setTimeout(() => {
+                const hostnameFilter = document.getElementById('hostnameFilter').value.toLowerCase();
+                const osFilter = document.getElementById('osFilter').value;
+                const maxMemory = parseFloat(document.getElementById('maxMemory').value) || 0;
+                const sunquestFilter = document.getElementById('sunquestFilter').value;
+                const ipSubnetFilter = document.getElementById('ipSubnetFilter').value;
+                
+                // Get selected models
+                const selectedModels = getSelectedModels();
             
-            filteredData = allData.filter(row => {
+            filteredData = latestData.filter(row => {
                 // Basic filters
                 const hostnameMatch = !hostnameFilter || row.Hostname.toLowerCase().includes(hostnameFilter);
                 
@@ -531,7 +1019,6 @@
                     }
                 }
                 
-                const statusMatch = !statusFilter || row.Status === statusFilter;
                 const maxMemoryMatch = !maxMemory || parseFloat(row.TotalMemory_GB) <= maxMemory;
                 
                 // Sunquest filter
@@ -550,17 +1037,55 @@
                 // Model filter
                 const modelMatch = selectedModels.length === 0 || selectedModels.includes(row.Model);
                 
-                return hostnameMatch && osMatch && statusMatch && 
+                return hostnameMatch && osMatch && 
                        maxMemoryMatch && sunquestMatch && ipMatch && modelMatch;
             });
             
-            updateDisplay();
+            // Apply current sort if any
+            if (currentSort.column) {
+                filteredData.sort((a, b) => {
+                    let aVal = a[currentSort.column] || '';
+                    let bVal = b[currentSort.column] || '';
+                    
+                    // Handle different data types
+                    if (currentSort.column === 'Timestamp' || currentSort.column === 'LastBoot') {
+                        aVal = new Date(aVal);
+                        bVal = new Date(bVal);
+                    } else if (currentSort.column === 'TotalMemory_GB' || currentSort.column === 'Drive_C_Percent_Free' || currentSort.column === 'Printer_Count') {
+                        aVal = parseFloat(aVal) || 0;
+                        bVal = parseFloat(bVal) || 0;
+                    } else {
+                        // String comparison
+                        aVal = aVal.toString().toLowerCase();
+                        bVal = bVal.toString().toLowerCase();
+                    }
+                    
+                    if (aVal < bVal) return currentSort.direction === 'asc' ? -1 : 1;
+                    if (aVal > bVal) return currentSort.direction === 'asc' ? 1 : -1;
+                    return 0;
+                });
+            }
+            
+                // Save filter state
+                saveFilterState();
+                
+                updateDisplay();
+                
+                // Perform search highlighting if hostname filter is active
+                const hostnameFilterValue = document.getElementById('hostnameFilter').value;
+                if (hostnameFilterValue) {
+                    performSearch(hostnameFilterValue);
+                } else {
+                    clearSearchHighlights();
+                }
+                
+                hideProgress();
+            }, 100);
         }
         
         function clearFilters() {
             document.getElementById('hostnameFilter').value = '';
             document.getElementById('osFilter').value = '';
-            document.getElementById('statusFilter').value = '';
             document.getElementById('maxMemory').value = '';
             document.getElementById('sunquestFilter').value = '';
             document.getElementById('ipSubnetFilter').value = '';
@@ -569,8 +1094,10 @@
             // Clear all model checkboxes
             clearAllModels();
             
-            filteredData = [...allData];
+            filteredData = [...latestData];
+            saveFilterState();
             updateDisplay();
+            clearSearchHighlights();
         }
         
         function updateDisplay() {
@@ -594,10 +1121,6 @@
             filteredData.forEach(row => {
                 const tr = document.createElement('tr');
                 
-                // Add CSS classes based on data
-                if (row.Status === 'Error') {
-                    tr.classList.add('status-error');
-                }
                 
                 // Check system status for color coding
                 const memoryGB = parseFloat(row.TotalMemory_GB) || 0;
@@ -620,21 +1143,27 @@
                     tr.classList.add('needs-upgrade');
                 }
                 
+                // Check if this hostname has multiple entries
+                const hasHistory = historyData[row.Hostname] && historyData[row.Hostname].length > 1;
+                const historyButton = hasHistory ? `<button onclick="showHistory('${row.Hostname}')" style="background: #17a2b8; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer; font-size: 12px;">History (${historyData[row.Hostname].length})</button>` : '';
+                
+                const lastBootInfo = calculateLastBootAge(row.LastBoot);
+                
                 tr.innerHTML = `
                     <td>${row.Timestamp || ''}</td>
-                    <td>${row.Hostname || ''}</td>
+                    <td>${row.Hostname || ''} ${historyButton}</td>
                     <td>${row.OS_Name || ''}</td>
                     <td>${row.Manufacturer || ''}</td>
                     <td>${row.Model || ''}</td>
                     <td>${row.TotalMemory_GB || ''}</td>
+                    <td class="${lastBootInfo.className}">${lastBootInfo.text}</td>
                     <td>${row.Processor || ''}</td>
                     <td>${row.Drive_C_Percent_Free || ''}%</td>
-                    <td>${row.Drive_D_Percent_Free || ''}%</td>
                     <td>${row.Primary_IP || ''}</td>
                     <td>${row.Subnet || ''}</td>
                     <td>${row.Sunquest_Apps || ''}</td>
+                    <td>${(parseInt(row.Printer_Count) > 0 && row.Printer_Names) ? `<button onclick="showPrinters('${row.Hostname}', \`${row.Printer_Names}\`)">View (${row.Printer_Count})</button>` : ''}</td>
                     <td title="${row.TraceRoute || ''}">${row.TraceRoute ? `<button onclick="showTraceRoute('${row.Hostname}', \`${row.TraceRoute}\`)">View Route</button>` : ''}</td>
-                    <td class="status-${row.Status === 'Success' ? 'success' : 'error'}">${row.Status || ''}</td>
                 `;
                 tableBody.appendChild(tr);
             });
@@ -701,10 +1230,6 @@
                 groupData.forEach(row => {
                     const tr = document.createElement('tr');
                     
-                    // Add CSS classes based on data
-                    if (row.Status === 'Error') {
-                        tr.classList.add('status-error');
-                    }
                     
                     // Check system status for color coding
                     const memoryGB = parseFloat(row.TotalMemory_GB) || 0;
@@ -727,21 +1252,27 @@
                         tr.classList.add('needs-upgrade');
                     }
                     
+                    // Check if this hostname has multiple entries
+                    const hasHistory = historyData[row.Hostname] && historyData[row.Hostname].length > 1;
+                    const historyButton = hasHistory ? `<button onclick="showHistory('${row.Hostname}')" style="background: #17a2b8; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer; font-size: 12px;">History (${historyData[row.Hostname].length})</button>` : '';
+                    
+                    const lastBootInfo = calculateLastBootAge(row.LastBoot);
+                    
                     tr.innerHTML = `
                         <td>${row.Timestamp || ''}</td>
-                        <td>${row.Hostname || ''}</td>
+                        <td>${row.Hostname || ''} ${historyButton}</td>
                         <td>${row.OS_Name || ''}</td>
                         <td>${row.Manufacturer || ''}</td>
                         <td>${row.Model || ''}</td>
                         <td>${row.TotalMemory_GB || ''}</td>
+                        <td class="${lastBootInfo.className}">${lastBootInfo.text}</td>
                         <td>${row.Processor || ''}</td>
                         <td>${row.Drive_C_Percent_Free || ''}%</td>
-                        <td>${row.Drive_D_Percent_Free || ''}%</td>
                         <td>${row.Primary_IP || ''}</td>
                         <td>${row.Subnet || ''}</td>
                         <td>${row.Sunquest_Apps || ''}</td>
+                        <td>${(parseInt(row.Printer_Count) > 0 && row.Printer_Names) ? `<button onclick="showPrinters('${row.Hostname}', \`${row.Printer_Names}\`)">View (${row.Printer_Count})</button>` : ''}</td>
                         <td title="${row.TraceRoute || ''}">${row.TraceRoute ? `<button onclick="showTraceRoute('${row.Hostname}', \`${row.TraceRoute}\`)">View Route</button>` : ''}</td>
-                        <td class="status-${row.Status === 'Success' ? 'success' : 'error'}">${row.Status || ''}</td>
                     `;
                     tableBody.appendChild(tr);
                 });
@@ -755,8 +1286,8 @@
         
         function updateStats() {
             document.getElementById('totalSystems').textContent = filteredData.length;
-            document.getElementById('successfulSystems').textContent = filteredData.filter(r => r.Status === 'Success').length;
-            document.getElementById('errorSystems').textContent = filteredData.filter(r => r.Status === 'Error').length;
+            document.getElementById('successfulSystems').textContent = filteredData.length;
+            document.getElementById('errorSystems').textContent = 0;
             document.getElementById('lowRamSystems').textContent = filteredData.filter(r => parseFloat(r.TotalMemory_GB) < 14).length;
             
             // Windows 11 Done - already running Windows 11
@@ -785,32 +1316,136 @@
         }
         
         function exportToCSV() {
-            exportData(filteredData, 'filtered_system_data.csv');
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+            exportData(filteredData, `filtered_system_data_${timestamp}.csv`, 'csv');
         }
         
         function exportAllToCSV() {
-            exportData(allData, 'all_system_data.csv');
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+            exportData(latestData, `latest_system_data_${timestamp}.csv`, 'csv');
         }
         
-        function exportData(data, filename) {
+        function exportToJSON() {
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+            exportData(filteredData, `filtered_system_data_${timestamp}.json`, 'json');
+        }
+        
+        function exportData(data, filename, format = 'csv') {
             if (data.length === 0) {
                 alert('No data to export');
                 return;
             }
             
-            const headers = Object.keys(data[0]);
-            const csvContent = [
-                headers.join(','),
-                ...data.map(row => headers.map(header => `"${(row[header] || '').toString().replace(/"/g, '""')}"`).join(','))
-            ].join('\n');
+            let content, mimeType;
             
-            const blob = new Blob([csvContent], { type: 'text/csv' });
+            if (format === 'json') {
+                content = JSON.stringify(data, null, 2);
+                mimeType = 'application/json';
+            } else {
+                const headers = Object.keys(data[0]);
+                content = [
+                    headers.join(','),
+                    ...data.map(row => headers.map(header => `"${(row[header] || '').toString().replace(/"/g, '""')}"`).join(','))
+                ].join('\n');
+                mimeType = 'text/csv';
+            }
+            
+            const blob = new Blob([content], { type: mimeType });
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
             a.download = filename;
             a.click();
             window.URL.revokeObjectURL(url);
+        }
+        
+        function showColumnSelector() {
+            if (filteredData.length === 0) {
+                alert('No data to export');
+                return;
+            }
+            
+            const headers = Object.keys(filteredData[0]);
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(0,0,0,0.5);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                z-index: 1000;
+            `;
+            
+            const modalContent = document.createElement('div');
+            modalContent.style.cssText = `
+                background: white;
+                padding: 20px;
+                border-radius: 8px;
+                max-width: 60%;
+                max-height: 80%;
+                overflow: auto;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            `;
+            
+            let checkboxesHTML = '';
+            headers.forEach(header => {
+                const checkboxId = `col_${header.replace(/[^a-zA-Z0-9]/g, '_')}`;
+                checkboxesHTML += `
+                    <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                        <input type="checkbox" id="${checkboxId}" value="${header}" checked style="margin-right: 8px;">
+                        <label for="${checkboxId}" style="cursor: pointer;">${header}</label>
+                    </div>
+                `;
+            });
+            
+            modalContent.innerHTML = `
+                <h3 style="margin-top: 0; color: #495057;">Select Columns to Export</h3>
+                <div style="max-height: 400px; overflow-y: auto; margin-bottom: 20px;">
+                    ${checkboxesHTML}
+                </div>
+                <div style="text-align: center;">
+                    <button class="btn" onclick="exportSelectedColumns(this.closest('.modal'))">Export Selected Columns</button>
+                    <button class="btn btn-secondary" onclick="this.closest('.modal').remove()">Cancel</button>
+                </div>
+            `;
+            
+            modal.className = 'modal';
+            modal.appendChild(modalContent);
+            document.body.appendChild(modal);
+            
+            // Close modal when clicking outside
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.remove();
+                }
+            });
+        }
+        
+        function exportSelectedColumns(modal) {
+            const checkboxes = modal.querySelectorAll('input[type="checkbox"]:checked');
+            const selectedColumns = Array.from(checkboxes).map(cb => cb.value);
+            
+            if (selectedColumns.length === 0) {
+                alert('Please select at least one column to export');
+                return;
+            }
+            
+            const filteredDataWithSelectedColumns = filteredData.map(row => {
+                const newRow = {};
+                selectedColumns.forEach(col => {
+                    newRow[col] = row[col];
+                });
+                return newRow;
+            });
+            
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+            exportData(filteredDataWithSelectedColumns, `selected_columns_${timestamp}.csv`, 'csv');
+            
+            modal.remove();
         }
         
         function refreshData() {
@@ -864,11 +1499,52 @@
                 }
             });
         }
+
+        function showPrinters(hostname, printersCsv) {
+            const printers = (printersCsv || '').split(';').map(p => p.trim()).filter(p => p);
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(0,0,0,0.5);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                z-index: 1000;
+            `;
+            const modalContent = document.createElement('div');
+            modalContent.style.cssText = `
+                background: white;
+                padding: 20px;
+                border-radius: 8px;
+                max-width: 80%;
+                max-height: 80%;
+                overflow: auto;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            `;
+            const listItems = printers.length ? printers.map(p => `<li>${p}</li>`).join('') : '<li>No printers found</li>';
+            modalContent.innerHTML = `
+                <h3 style="margin-top: 0; color: #495057;">Printers for ${hostname}</h3>
+                <ul style="background: #f8f9fa; padding: 15px; border-radius: 4px; max-height: 400px; overflow-y: auto;">
+                    ${listItems}
+                </ul>
+                <div style="text-align: center; margin-top: 15px;">
+                    <button class="btn" onclick="this.closest('.modal').remove()">Close</button>
+                </div>
+            `;
+            modal.className = 'modal';
+            modal.appendChild(modalContent);
+            document.body.appendChild(modal);
+            modal.addEventListener('click', (e) => { if (e.target === modal) { modal.remove(); } });
+        }
         
         // Model filter functions
         function populateModelFilter() {
             const modelSet = new Set();
-            allData.forEach(row => {
+            latestData.forEach(row => {
                 if (row.Model) {
                     modelSet.add(row.Model);
                 }
@@ -928,11 +1604,286 @@
             });
         }
         
+        function showHistory(hostname) {
+            const entries = historyData[hostname];
+            if (!entries || entries.length <= 1) {
+                alert('No history available for this hostname');
+                return;
+            }
+            
+            // Create a modal to display the history
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(0,0,0,0.5);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                z-index: 1000;
+            `;
+            
+            const modalContent = document.createElement('div');
+            modalContent.style.cssText = `
+                background: white;
+                padding: 20px;
+                border-radius: 8px;
+                max-width: 95%;
+                max-height: 90%;
+                overflow: auto;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            `;
+            
+            // Create comparison view
+            let historyTable = `
+                <h3 style="margin-top: 0; color: #495057;">History Comparison for ${hostname} (${entries.length} entries)</h3>
+                <div style="margin-bottom: 15px;">
+                    <button class="btn btn-secondary" onclick="showComparisonView(this.closest('.modal'), '${hostname}')">Side-by-Side Comparison</button>
+                    <button class="btn btn-secondary" onclick="showTimelineView(this.closest('.modal'), '${hostname}')">Timeline View</button>
+                </div>
+                <div id="historyContent" style="max-height: 500px; overflow-y: auto;">
+            `;
+            
+            // Default timeline view
+            historyTable += createTimelineView(entries);
+            
+            historyTable += `
+                </div>
+                <div style="text-align: center; margin-top: 15px;">
+                    <button class="btn" onclick="this.closest('.modal').remove()">Close</button>
+                </div>
+            `;
+            
+            modalContent.innerHTML = historyTable;
+            modal.className = 'modal';
+            modal.appendChild(modalContent);
+            document.body.appendChild(modal);
+            
+            // Close modal when clicking outside
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.remove();
+                }
+            });
+        }
+        
+        function createTimelineView(entries) {
+            let timelineTable = `
+                <table class="comparison-table">
+                    <thead>
+                        <tr>
+                            <th>Timestamp</th>
+                            <th>OS</th>
+                            <th>Memory (GB)</th>
+                            <th>Primary IP</th>
+                            <th>C: Free %</th>
+                            <th>Processor</th>
+                            <th>Model</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            entries.forEach((entry, index) => {
+                const isLatest = index === 0;
+                const rowStyle = isLatest ? 'background-color: #d4edda; font-weight: bold;' : '';
+                timelineTable += `
+                    <tr style="${rowStyle}">
+                        <td>${entry.Timestamp || ''} ${isLatest ? '(Latest)' : ''}</td>
+                        <td>${entry.OS_Name || ''}</td>
+                        <td>${entry.TotalMemory_GB || ''}</td>
+                        <td>${entry.Primary_IP || ''}</td>
+                        <td>${entry.Drive_C_Percent_Free || ''}%</td>
+                        <td>${entry.Processor || ''}</td>
+                        <td>${entry.Model || ''}</td>
+                    </tr>
+                `;
+            });
+            
+            timelineTable += `
+                    </tbody>
+                </table>
+            `;
+            
+            return timelineTable;
+        }
+        
+        function createComparisonView(entries) {
+            if (entries.length < 2) return '<p>Need at least 2 entries for comparison</p>';
+            
+            const latest = entries[0];
+            const previous = entries[1];
+            
+            const fields = [
+                { key: 'Timestamp', label: 'Timestamp' },
+                { key: 'OS_Name', label: 'Operating System' },
+                { key: 'TotalMemory_GB', label: 'Memory (GB)' },
+                { key: 'Primary_IP', label: 'Primary IP' },
+                { key: 'Drive_C_Percent_Free', label: 'C: Free %' },
+                { key: 'Processor', label: 'Processor' },
+                { key: 'Model', label: 'Model' },
+                { key: 'Manufacturer', label: 'Manufacturer' },
+                { key: 'Subnet', label: 'Subnet' }
+            ];
+            
+            let comparisonTable = `
+                <table class="comparison-table">
+                    <thead>
+                        <tr>
+                            <th>Field</th>
+                            <th>Previous (${previous.Timestamp || 'Unknown'})</th>
+                            <th>Latest (${latest.Timestamp || 'Unknown'})</th>
+                            <th>Change</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            fields.forEach(field => {
+                const prevValue = previous[field.key] || '';
+                const latestValue = latest[field.key] || '';
+                const diff = calculateDiff(prevValue, latestValue, field.key);
+                
+                comparisonTable += `
+                    <tr>
+                        <td><strong>${field.label}</strong></td>
+                        <td class="comparison-cell">
+                            ${prevValue}
+                            ${diff.indicator ? `<span class="diff-indicator">${diff.indicator}</span>` : ''}
+                        </td>
+                        <td class="comparison-cell ${diff.className}">
+                            ${latestValue}
+                        </td>
+                        <td class="${diff.className}">
+                            ${diff.text}
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            comparisonTable += `
+                    </tbody>
+                </table>
+            `;
+            
+            return comparisonTable;
+        }
+        
+        function calculateDiff(prevValue, latestValue, fieldKey) {
+            if (prevValue === latestValue) {
+                return { text: 'No change', className: '', indicator: '' };
+            }
+            
+            // Handle numeric fields
+            if (fieldKey === 'TotalMemory_GB' || fieldKey === 'Drive_C_Percent_Free') {
+                const prevNum = parseFloat(prevValue) || 0;
+                const latestNum = parseFloat(latestValue) || 0;
+                const diff = latestNum - prevNum;
+                
+                if (diff > 0) {
+                    return { 
+                        text: `+${diff.toFixed(2)}`, 
+                        className: 'diff-increased', 
+                        indicator: '↑' 
+                    };
+                } else if (diff < 0) {
+                    return { 
+                        text: `${diff.toFixed(2)}`, 
+                        className: 'diff-decreased', 
+                        indicator: '↓' 
+                    };
+                }
+            }
+            
+            // Handle text fields
+            return { 
+                text: 'Changed', 
+                className: 'diff-changed', 
+                indicator: '↔' 
+            };
+        }
+        
+        function showComparisonView(modal, hostname) {
+            const entries = historyData[hostname];
+            const contentDiv = modal.querySelector('#historyContent');
+            contentDiv.innerHTML = createComparisonView(entries);
+        }
+        
+        function showTimelineView(modal, hostname) {
+            const entries = historyData[hostname];
+            const contentDiv = modal.querySelector('#historyContent');
+            contentDiv.innerHTML = createTimelineView(entries);
+        }
+        
+        // Sorting functionality
+        function sortTable(column) {
+            if (currentSort.column === column) {
+                // Toggle direction if same column
+                currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                // New column, default to ascending
+                currentSort.column = column;
+                currentSort.direction = 'asc';
+            }
+            
+            // Update visual indicators
+            updateSortIndicators();
+            
+            // Sort the filtered data
+            filteredData.sort((a, b) => {
+                let aVal = a[column] || '';
+                let bVal = b[column] || '';
+                
+                // Handle different data types
+                if (column === 'Timestamp' || column === 'LastBoot') {
+                    aVal = new Date(aVal);
+                    bVal = new Date(bVal);
+                } else if (column === 'TotalMemory_GB' || column === 'Drive_C_Percent_Free' || column === 'Printer_Count') {
+                    aVal = parseFloat(aVal) || 0;
+                    bVal = parseFloat(bVal) || 0;
+                } else {
+                    // String comparison
+                    aVal = aVal.toString().toLowerCase();
+                    bVal = bVal.toString().toLowerCase();
+                }
+                
+                if (aVal < bVal) return currentSort.direction === 'asc' ? -1 : 1;
+                if (aVal > bVal) return currentSort.direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+            
+            // Refresh display
+            updateDisplay();
+        }
+        
+        function updateSortIndicators() {
+            // Clear all sort indicators
+            document.querySelectorAll('th').forEach(th => {
+                th.classList.remove('sort-asc', 'sort-desc');
+            });
+            
+            // Add indicator to current sort column
+            if (currentSort.column) {
+                const header = document.querySelector(`th[onclick="sortTable('${currentSort.column}')"]`);
+                if (header) {
+                    header.classList.add(currentSort.direction === 'asc' ? 'sort-asc' : 'sort-desc');
+                }
+            }
+        }
+        
         // Auto-refresh disabled for local file usage
         // setInterval(refreshData, 30000);
         
         // Load data on page load
-        document.addEventListener('DOMContentLoaded', loadCSVData);
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('DOM loaded, script functions available');
+            setupKeyboardShortcuts();
+            // Auto-load disabled - user must click "Load CSV File" button
+            // loadCSVData();
+        });
     </script>
 </body>
 </html>
