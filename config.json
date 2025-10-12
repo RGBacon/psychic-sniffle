@@ -1,0 +1,93 @@
+﻿{
+    "DefaultMessage":  "IMPORTANT: This device has been identified for replacement. Please contact IT Support via Teams or Outlook to schedule your device replacement.",
+    "OutputFiles":  {
+                        "EnhancedInfo":  "enhanced_system_info.txt",
+                        "NetworkTopology":  "network_topology.txt",
+                        "UniqueApps":  "unique_apps.txt",
+                        "SunquestResults":  "sunquest_results.txt",
+                        "SystemDataCSV":  "system_data.csv",
+                        "HTMLViewer":  "system_data_viewer.html",
+                        "LogFile":  "script_log.txt"
+                    },
+    "HostsFile":  "hosts.txt",
+    "Colors":  {
+                   "Highlight":  "White",
+                   "Header":  "Yellow",
+                   "Error":  "Red",
+                   "Warning":  "Yellow",
+                   "Success":  "Green",
+                   "Info":  "White",
+                   "Menu":  "Gray"
+               },
+    "MaxParallelJobs":  10,
+    "Timeout":  90,
+    "SystemInfo":  {
+                       "CheckSunquest":  true,
+                       "CheckPrinters":  true,
+                       "CheckTracert":  false
+                   },
+    "CheckApps":  {
+                      "BaselineFile":  "baseline.txt",
+                      "ExcludePatterns":  [
+                                              "^Microsoft ",
+                                              "^McAfee ",
+                                              "^Google Update Helper$",
+                                              "^64 Bit HP CIO Components Installer$",
+                                              "^Trellix Data Exchange Layer for MA$",
+                                              "^Google Chrome$",
+                                              "^Teams Machine-Wide Installer$"
+                                          ]
+                  },
+    "FailedHostTracking":  {
+                               "Enabled":  true,
+                               "DefaultRetryIntervalHours":  24,
+                               "CriticalRetryIntervalHours":  6,
+                               "MaxRetryAttempts":  10,
+                               "PriorityLevels":  [
+                                                      "critical",
+                                                      "normal",
+                                                      "low"
+                                                  ],
+                               "EscalationThreshold":  5,
+                               "RemovalDays":  14,
+                               "MinRetryIntervalHours":  6
+                           },
+    "Scheduling":  {
+                       "Enabled":  true,
+                       "DefaultIntervalHours":  24,
+                       "CriticalIntervalHours":  6,
+                       "LowPriorityIntervalHours":  48,
+                       "MaxConcurrentScheduledScans":  5,
+                       "ScheduleProfiles":  [
+                                                {
+                                                    "Name":  "Critical Systems",
+                                                    "Priority":  "critical",
+                                                    "IntervalHours":  6,
+                                                    "Enabled":  true
+                                                },
+                                                {
+                                                    "Name":  "Standard Systems",
+                                                    "Priority":  "normal",
+                                                    "IntervalHours":  24,
+                                                    "Enabled":  true
+                                                },
+                                                {
+                                                    "Name":  "Low Priority Systems",
+                                                    "Priority":  "low",
+                                                    "IntervalHours":  48,
+                                                    "Enabled":  false
+                                                }
+                                            ],
+                       "AutomationSettings":  {
+                                                  "AutoStartOnScriptLaunch":  false,
+                                                  "RunInBackground":  false,
+                                                  "NotifyOnCompletion":  true,
+                                                  "LogSchedulingOperations":  true
+                                              },
+                       "ConflictResolution":  {
+                                                  "SkipIfManualScanInProgress":  true,
+                                                  "RescheduleOnConflict":  true,
+                                                  "MaxConflictDelayMinutes":  30
+                                              }
+                   }
+}

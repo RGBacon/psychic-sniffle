@@ -1,0 +1,11 @@
+# Hostname list for SystemInfo scanning
+# Add one hostname per line
+# Lines starting with # are comments and will be ignored
+
+# Example:
+# WORKSTATION-001
+# SERVER-DB-01
+# LAPTOP-USER123
+
+# Add your target hostnames below:
+

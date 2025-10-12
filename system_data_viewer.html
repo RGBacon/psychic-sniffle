@@ -1,6 +1,6 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
+<html lang="en"><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>System Data Viewer</title>
@@ -310,15 +310,11 @@
             </div>
             <div class="filter-group">
                 <label for="osFilter">Operating System:</label>
-                <select id="osFilter">
-                    <option value="">All OS</option>
-                </select>
+                <select id="osFilter"><option value="" selected="selected">All OS</option><option value="Windows 11">Windows 11</option><option value="Windows 10">Windows 10</option></select>
             </div>
             <div class="filter-group">
                 <label for="sunquestFilter">Sunquest Apps:</label>
-                <select id="sunquestFilter">
-                    <option value="">All</option>
-                </select>
+                <select id="sunquestFilter"><option value="" selected="selected">All</option><option value="none">No Sunquest Apps</option></select>
             </div>
             <div class="filter-group">
                 <label for="ipSubnetFilter">IP Subnet:</label>
@@ -327,7 +323,7 @@
             <div class="filter-group">
                 <label for="subnetGroupFilter">Group by Network:</label>
                 <select id="subnetGroupFilter">
-                    <option value="">No Grouping</option>
+                    <option value="" selected="selected">No Grouping</option>
                     <option value="major">Major Networks (10.x.x.x)</option>
                     <option value="subnet16">/16 Subnets (10.24.x.x)</option>
                     <option value="subnet24">/24 Subnets (10.24.104.x)</option>
@@ -344,9 +340,7 @@
                         <button type="button" class="btn btn-secondary" onclick="selectAllModels()" style="font-size: 12px; padding: 5px 10px;">Select All</button>
                         <button type="button" class="btn btn-secondary" onclick="clearAllModels()" style="font-size: 12px; padding: 5px 10px; margin-left: 5px;">Clear All</button>
                     </div>
-                    <div id="modelCheckboxes" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 5px;">
-                        <!-- Model checkboxes will be populated here -->
-                    </div>
+                    <div id="modelCheckboxes" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 5px;"><div style="display: flex; align-items: center; margin-bottom: 3px;"><input type="checkbox" id="model_HP_EliteBook_840_G4" value="HP EliteBook 840 G4" style="margin-right: 8px;" checked="checked"><label for="model_HP_EliteBook_840_G4" style="font-size: 13px; cursor: pointer; margin: 0px;">HP EliteBook 840 G4</label></div><div style="display: flex; align-items: center; margin-bottom: 3px;"><input type="checkbox" id="model_HP_EliteBook_x360_1030_G3" value="HP EliteBook x360 1030 G3" style="margin-right: 8px;" checked="checked"><label for="model_HP_EliteBook_x360_1030_G3" style="font-size: 13px; cursor: pointer; margin: 0px;">HP EliteBook x360 1030 G3</label></div><div style="display: flex; align-items: center; margin-bottom: 3px;"><input type="checkbox" id="model_HP_EliteBook_x360_1030_G4" value="HP EliteBook x360 1030 G4" style="margin-right: 8px;" checked="checked"><label for="model_HP_EliteBook_x360_1030_G4" style="font-size: 13px; cursor: pointer; margin: 0px;">HP EliteBook x360 1030 G4</label></div><div style="display: flex; align-items: center; margin-bottom: 3px;"><input type="checkbox" id="model_HP_ProDesk_600_G1_SFF" value="HP ProDesk 600 G1 SFF" style="margin-right: 8px;" checked="checked"><label for="model_HP_ProDesk_600_G1_SFF" style="font-size: 13px; cursor: pointer; margin: 0px;">HP ProDesk 600 G1 SFF</label></div><div style="display: flex; align-items: center; margin-bottom: 3px;"><input type="checkbox" id="model_HP_ProDesk_600_G2_DM" value="HP ProDesk 600 G2 DM" style="margin-right: 8px;" checked="checked"><label for="model_HP_ProDesk_600_G2_DM" style="font-size: 13px; cursor: pointer; margin: 0px;">HP ProDesk 600 G2 DM</label></div><div style="display: flex; align-items: center; margin-bottom: 3px;"><input type="checkbox" id="model_HP_ProDesk_600_G2_SFF" value="HP ProDesk 600 G2 SFF" style="margin-right: 8px;" checked="checked"><label for="model_HP_ProDesk_600_G2_SFF" style="font-size: 13px; cursor: pointer; margin: 0px;">HP ProDesk 600 G2 SFF</label></div><div style="display: flex; align-items: center; margin-bottom: 3px;"><input type="checkbox" id="model_HP_ProDesk_600_G3_DM" value="HP ProDesk 600 G3 DM" style="margin-right: 8px;" checked="checked"><label for="model_HP_ProDesk_600_G3_DM" style="font-size: 13px; cursor: pointer; margin: 0px;">HP ProDesk 600 G3 DM</label></div><div style="display: flex; align-items: center; margin-bottom: 3px;"><input type="checkbox" id="model_HP_ProDesk_600_G4_DM" value="HP ProDesk 600 G4 DM" style="margin-right: 8px;" checked="checked"><label for="model_HP_ProDesk_600_G4_DM" style="font-size: 13px; cursor: pointer; margin: 0px;">HP ProDesk 600 G4 DM</label></div><div style="display: flex; align-items: center; margin-bottom: 3px;"><input type="checkbox" id="model_HP_ProDesk_600_G4_DM__TAA_" value="HP ProDesk 600 G4 DM (TAA)" style="margin-right: 8px;" checked="checked"><label for="model_HP_ProDesk_600_G4_DM__TAA_" style="font-size: 13px; cursor: pointer; margin: 0px;">HP ProDesk 600 G4 DM (TAA)</label></div><div style="display: flex; align-items: center; margin-bottom: 3px;"><input type="checkbox" id="model_HP_ProDesk_600_G4_SFF" value="HP ProDesk 600 G4 SFF" style="margin-right: 8px;" checked="checked"><label for="model_HP_ProDesk_600_G4_SFF" style="font-size: 13px; cursor: pointer; margin: 0px;">HP ProDesk 600 G4 SFF</label></div><div style="display: flex; align-items: center; margin-bottom: 3px;"><input type="checkbox" id="model_HP_ProOne_600_G2_21_5_in_Non_Touch_AiO" value="HP ProOne 600 G2 21.5-in Non-Touch AiO" style="margin-right: 8px;" checked="checked"><label for="model_HP_ProOne_600_G2_21_5_in_Non_Touch_AiO" style="font-size: 13px; cursor: pointer; margin: 0px;">HP ProOne 600 G2 21.5-in Non-Touch AiO</label></div><div style="display: flex; align-items: center; margin-bottom: 3px;"><input type="checkbox" id="model_HP_ProOne_600_G3_21_5_in_Non_Touch_AiO" value="HP ProOne 600 G3 21.5-in Non-Touch AiO" style="margin-right: 8px;" checked="checked"><label for="model_HP_ProOne_600_G3_21_5_in_Non_Touch_AiO" style="font-size: 13px; cursor: pointer; margin: 0px;">HP ProOne 600 G3 21.5-in Non-Touch AiO</label></div><div style="display: flex; align-items: center; margin-bottom: 3px;"><input type="checkbox" id="model_HP_ProOne_600_G4_21_5_in_Non_Touch_AiO" value="HP ProOne 600 G4 21.5-in Non-Touch AiO" style="margin-right: 8px;" checked="checked"><label for="model_HP_ProOne_600_G4_21_5_in_Non_Touch_AiO" style="font-size: 13px; cursor: pointer; margin: 0px;">HP ProOne 600 G4 21.5-in Non-Touch AiO</label></div><div style="display: flex; align-items: center; margin-bottom: 3px;"><input type="checkbox" id="model_Inc__OptiPlex_Micro_7010" value="Inc. OptiPlex Micro 7010" style="margin-right: 8px;" checked="checked"><label for="model_Inc__OptiPlex_Micro_7010" style="font-size: 13px; cursor: pointer; margin: 0px;">Inc. OptiPlex Micro 7010</label></div></div>
                 </div>
             </div>
             <div style="margin-top: 15px;">
@@ -372,7 +366,7 @@
             </div>
             <div class="stat-item">
                 <div class="stat-number" id="lowRamSystems">0</div>
-                <div class="stat-label">Low RAM (< 14GB)</div>
+                <div class="stat-label">Low RAM (&lt; 14GB)</div>
             </div>
             <div class="stat-item">
                 <div class="stat-number" id="win11Done">0</div>
@@ -383,6 +377,7 @@
                 <div class="stat-label">PCs Need Work</div>
             </div>
         </div>
+        
         
         <div class="table-container">
             <table id="dataTable">
@@ -404,11 +399,7 @@
                         <th class="sortable" onclick="sortTable('TraceRoute')">TraceRoute</th>
                     </tr>
                 </thead>
-                <tbody id="tableBody">
-                    <tr>
-                        <td colspan="14" class="loading">Click "Load CSV File" to begin</td>
-                    </tr>
-                </tbody>
+                <tbody id="tableBody"></tbody>
             </table>
         </div>
         
@@ -442,7 +433,7 @@
                 </div>
                 <div style="display: flex; align-items: center;">
                     <div style="width: 20px; height: 20px; background-color: #f8d7da; border: 1px solid #ccc; margin-right: 8px;"></div>
-                    <span>Needs Upgrade (Windows 10 or below with < 14GB RAM or unknown OS)</span>
+                    <span>Needs Upgrade (Windows 10 or below with &lt; 14GB RAM or unknown OS)</span>
                 </div>
             </div>
         </div>
@@ -1883,7 +1874,66 @@
             setupKeyboardShortcuts();
             // Auto-load disabled - user must click "Load CSV File" button
             // loadCSVData();
+            
         });
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        function createModal(title, id) {
+            const modal = document.createElement('div');
+            modal.id = id;
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(0,0,0,0.5);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                z-index: 2000;
+            `;
+            
+            modal.innerHTML = `
+                <div class="modal-content" style="
+                    background: white;
+                    padding: 30px;
+                    border-radius: 8px;
+                    max-width: 90%;
+                    max-height: 90%;
+                    overflow-y: auto;
+                    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+                ">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                        <h2 style="margin: 0;">${title}</h2>
+                        <button onclick="document.body.removeChild(this.closest('div[id]'))" style="
+                            background: #dc3545;
+                            color: white;
+                            border: none;
+                            padding: 8px 12px;
+                            border-radius: 4px;
+                            cursor: pointer;
+                        ">Close</button>
+                    </div>
+                </div>
+            `;
+            
+            return modal;
+        }
     </script>
-</body>
-</html>
+
+
+</body></html>
